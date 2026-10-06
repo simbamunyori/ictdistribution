@@ -1,0 +1,39 @@
+# Local development: PostgreSQL, Redis and Mailpit (a test inbox that
+# catches every email the platform sends). Run the app with `npm run dev`.
+#
+#   docker compose up -d
+#   open http://localhost:8025 to read the emails
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ictd
+      POSTGRES_PASSWORD: ictd
+      POSTGRES_DB: ictd
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./scripts/dev-db-init.sql:/docker-entrypoint-initdb.d/dev-db-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ictd -d ictd"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  mail:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP: SMTP_URL=smtp://localhost:1025
+      - "8025:8025" # Inbox in the browser
+
+volumes:
+  db-data:

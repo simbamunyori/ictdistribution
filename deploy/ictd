@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Day-to-day commands on the production server, for the deploy user
+# (installed as /usr/local/bin/ictd by deploy/server-setup.sh):
+#
+#   ictd status                         which release is live, and its health
+#   ictd logs                           follow the app's log
+#   ictd restart                        start the app and backups again, e.g. after changing .env
+#   ictd create-admin "Name" email      invite a staff Admin (prints the link too)
+#   ictd backup                         take a backup now (off-site too once set up)
+#   ictd restore-test                   prove the newest backup restores
+#   ictd rollback <release>             start an earlier release again
+#   ictd releases                       list the releases kept on the server
+set -euo pipefail
+home=${ICTD_HOME:-/opt/ictd}
+# sudo -u deploy keeps the caller's directory (e.g. /root), which the deploy
+# user can't read and docker compose refuses; work from our own instead.
+cd "$home"
+current=$(cat "$home/current-release" 2>/dev/null || true)
+compose() { RELEASE="$1" docker compose -p ictd -f "$home/releases/$1/docker-compose.prod.yml" --env-file "$home/.env" "${@:2}"; }
+need_current() { [[ -n "$current" ]] || { echo "Nothing is deployed yet."; exit 1; }; }
+
+case "${1:-}" in
+  status)
+    need_current
+    echo "Live release: $current"
+    curl -fsS --max-time 5 http://127.0.0.1:3100/api/health && echo || echo "The app is not answering."
+    compose "$current" ps
+    ;;
+  logs) need_current; compose "$current" logs -f --tail 100 app ;;
+  restart) need_current; compose "$current" up -d --force-recreate app backup ;;
+  create-admin)
+    need_current
+    compose "$current" exec app node ops.cjs create-admin "${@:2}"
+    ;;
+  backup) need_current; compose "$current" run --rm backup /backup.sh ;;
+  restore-test) need_current; compose "$current" run --rm backup /restore-test.sh ;;
+  releases) ls -1t "$home/releases" ;;
+  rollback)
+    to=${2:?which release? see: ictd releases}
+    [[ -d "$home/releases/$to" ]] || { echo "No release $to on this server."; exit 1; }
+    compose "$to" up -d --remove-orphans app backup
+    echo "$to" > "$home/current-release"
+    ln -sfn "$home/releases/$to" "$home/current"
+    echo "Started $to. Database changes made by later releases stay in place."
+    ;;
+  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

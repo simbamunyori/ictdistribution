@@ -1,0 +1,68 @@
+name: Deploy
+
+# Every push to main that passes CI goes live on the production server
+# (docs/deploy.md). "Run workflow" deploys main again by hand.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time, in order; a running deploy is never cancelled.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HOST: ${{ secrets.DEPLOY_HOST }}
+      PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+      PUBLIC_URL: ${{ vars.PUBLIC_URL || 'https://ictdistribution.africa' }}
+    steps:
+      - name: Check the server is set up
+        run: |
+          if [ -z "$HOST" ]; then
+            echo "::error::The DEPLOY_HOST, DEPLOY_KNOWN_HOSTS and DEPLOY_SSH_KEY secrets are not set yet (docs/deploy.md)."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Package the release
+        run: |
+          echo "RELEASE=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_ENV"
+          git archive --format=tar.gz -o release.tar.gz HEAD
+      - name: Sign in to the server
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+      - name: Build, migrate and start on the server (rolls back if unhealthy)
+        run: |
+          scp -P "$PORT" -o BatchMode=yes release.tar.gz deploy/deploy.sh "deploy@$HOST:/opt/ictd/incoming/"
+          ssh -p "$PORT" -o BatchMode=yes -o ServerAliveInterval=30 "deploy@$HOST" \
+            "bash /opt/ictd/incoming/deploy.sh $RELEASE /opt/ictd/incoming/release.tar.gz"
+      - name: Check the public address serves this release
+        run: |
+          for i in $(seq 1 10); do
+            curl -fsS --max-time 10 "$PUBLIC_URL/api/health" | tee /dev/stderr | grep -q "\"release\":\"$RELEASE\"" && exit 0
+            sleep 6
+          done
+          echo "::error::$PUBLIC_URL/api/health does not report $RELEASE"
+          exit 1
+      - name: Forget the key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

@@ -1,0 +1,429 @@
+// ICT Distribution Africa data model.
+//
+// Rules this schema encodes:
+// - Money is a BigInt in the currency's minor unit with a currency code
+//   beside it. Never a float. Exchange rates are exact decimal text.
+// - Business rules (price levels, markets, currencies, rate checks) are
+//   rows edited in the admin area, never constants in code.
+// - Every customer account row belongs to one Organisation and is read
+//   through tenantDb(), which adds the organisation filter. Individuals
+//   buy as themselves, with no organisation.
+// - AuditEvent rows are never edited or deleted (enforced by a trigger).
+// - Supplier names, costs and sourcing never appear in a customer-facing
+//   model or page (later milestones keep them in staff-only models).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Markets and currencies ──────────────────────────────────────────
+
+/// A currency we can price in. Added in /admin/markets.
+model Currency {
+  /// ISO 4217, e.g. "BWP".
+  code      String   @id
+  name      String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  markets Market[]
+}
+
+/// A country we sell in. Decides currency, how amounts and dates are
+/// written, and the price conversion rules. Edited in /admin/markets.
+model Market {
+  /// "bw", "za", "zw". Lower-case ISO 3166-1 alpha-2 of the country.
+  code          String   @id
+  name          String
+  /// ISO 3166-1 alpha-2, upper case.
+  country       String   @unique
+  currency      String
+  /// BCP 47, for writing money and dates, e.g. "en-BW".
+  locale        String
+  timeZone      String
+  enabled       Boolean  @default(false)
+  /// Where visitors go when their country isn't one of ours. Exactly one.
+  isDefault     Boolean  @default(false)
+  sortOrder     Int      @default(0)
+  /// Basis points added to the exchange rate when converting our base
+  /// prices, to cover the rate moving before we pay. 200 is 2%.
+  fxBufferBps   Int      @default(200)
+  /// Converted prices are rounded up to a multiple of this many minor
+  /// units. 100 in BWP rounds up to the next whole pula; 0 or 1 leaves them.
+  roundToMinor  Int      @default(100)
+  supportEmail  String?
+  updatedAt     DateTime @updatedAt
+
+  currencyRef   Currency       @relation(fields: [currency], references: [code], onDelete: Restrict)
+  organisations Organisation[]
+  users         User[]
+}
+
+/// Settings that apply to every market. One row, id "global".
+model PricingSettings {
+  id                String    @id @default("global")
+  /// The currency our catalogue prices are kept in. Customers see theirs.
+  baseCurrency      String    @default("USD")
+  /// A new rate that moves more than this since the one in use is held back
+  /// for an Admin or Finance to accept. 1,000 is 10%.
+  rateJumpHoldBps   Int       @default(1000)
+  /// Rates older than this many hours raise a warning to staff.
+  rateMaxAgeHours   Int       @default(48)
+  /// When rates were last fetched, and why the last try failed.
+  ratesCheckedAt    DateTime?
+  ratesError        String?
+  updatedAt         DateTime  @updatedAt
+}
+
+/// One exchange rate as fetched: 1 base = rate quote, as exact decimal
+/// text. The newest row for a pair that isn't held back is the one in use.
+model ExchangeRate {
+  id           String    @id @default(cuid())
+  base         String
+  quote        String
+  rate         String
+  /// Where it came from, e.g. "open.er-api.com", or "staff" when typed.
+  source       String
+  /// When the source says the rate was published.
+  publishedAt  DateTime
+  fetchedAt    DateTime  @default(now())
+  /// Why it isn't used yet, e.g. a jump too large to trust. Null when it is.
+  heldBack     String?
+  acceptedById String?
+  acceptedAt   DateTime?
+
+  @@index([base, quote, fetchedAt])
+}
+
+// ─── Customer types ──────────────────────────────────────────────────
+
+enum CustomerTypeCode {
+  INDIVIDUAL
+  BUSINESS
+  RESELLER
+  GOVERNMENT
+}
+
+/// The four kinds of customer. Each has its own price level, set in
+/// /admin/customer-types. The category markups, volume breaks and
+/// per-customer prices of D4 build on this.
+model CustomerType {
+  code         CustomerTypeCode @id
+  name         String
+  description  String
+  /// Markup on our cost for this price level, in basis points. 2,500 is 25%.
+  markupBps    Int
+  /// Business types are organisations with their own users.
+  organisation Boolean
+  /// Individuals may check out without an account.
+  guestCheckout Boolean         @default(false)
+  sortOrder    Int              @default(0)
+  updatedAt    DateTime         @updatedAt
+
+  organisations Organisation[]
+}
+
+// ─── People and organisations ────────────────────────────────────────
+
+enum UserKind {
+  /// A shopper, or someone at a customer organisation.
+  CUSTOMER
+  /// ICT Distribution Africa staff. Signs in to /admin only.
+  STAFF
+}
+
+enum StaffRole {
+  /// Everything, including settings, staff accounts and the audit log.
+  ADMIN
+  /// Customers, quotes and orders.
+  SALES
+  /// Suppliers, prices from suppliers and purchase orders.
+  PROCUREMENT
+  /// Shipments, warehouses and deliveries.
+  LOGISTICS
+  /// Exchange rates, credit, invoices and payments.
+  FINANCE
+  /// Customer questions, returns and account help.
+  SUPPORT
+}
+
+model User {
+  id              String     @id @default(cuid())
+  kind            UserKind   @default(CUSTOMER)
+  /// Stored lower-cased.
+  email           String     @unique
+  name            String
+  phone           String?
+  /// The market an individual shops in. Organisations carry their own.
+  marketCode      String?
+  emailVerifiedAt DateTime?
+  /// Staff only.
+  staffRole       StaffRole?
+  deactivatedAt   DateTime?
+  lastSignInAt    DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  market        Market?            @relation(fields: [marketCode], references: [code], onDelete: Restrict)
+  memberships   Membership[]
+  sessions      Session[]
+  identities    ExternalIdentity[]
+  passkeys      Passkey[]
+  invitationsSent StaffInvitation[] @relation("staffInvitedBy")
+  staffInvitation StaffInvitation?  @relation("staffInvitationAccepted")
+}
+
+enum OrgRole {
+  /// Everything, including the team and the company details.
+  OWNER
+  /// Places orders and asks for quotes.
+  BUYER
+  /// Invoices, statements and payments.
+  FINANCE
+  /// Sees everything, changes nothing.
+  VIEWER
+}
+
+/// A business customer: a company, reseller or government or enterprise
+/// buyer, with its own users.
+model Organisation {
+  id                 String           @id @default(cuid())
+  name               String
+  customerType       CustomerTypeCode @default(BUSINESS)
+  /// ISO 3166-1 alpha-2.
+  country            String
+  marketCode         String
+  registrationNumber String?
+  taxNumber          String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  type        CustomerType @relation(fields: [customerType], references: [code], onDelete: Restrict)
+  market      Market       @relation(fields: [marketCode], references: [code], onDelete: Restrict)
+  memberships Membership[]
+  invitations Invitation[]
+
+  @@index([customerType])
+}
+
+model Membership {
+  id             String   @id @default(cuid())
+  organisationId String
+  userId         String
+  role           OrgRole
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([organisationId, userId])
+  @@index([userId])
+}
+
+/// An emailed invitation to join an organisation. Only the hash of the
+/// link's token is stored; the link is made when the email is sent.
+model Invitation {
+  id             String    @id @default(cuid())
+  organisationId String
+  /// Stored lower-cased.
+  email          String
+  role           OrgRole
+  tokenHash      String?   @unique
+  invitedById    String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId])
+}
+
+/// An invitation for a colleague to set up their own staff account.
+model StaffInvitation {
+  id          String    @id @default(cuid())
+  /// Stored lower-cased.
+  email       String
+  name        String
+  staffRole   StaffRole
+  tokenHash   String?   @unique
+  /// Null for the first Admin, made on the server with `ictd create-admin`.
+  invitedById String?
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  userId      String?   @unique
+  createdAt   DateTime  @default(now())
+
+  invitedBy User? @relation("staffInvitedBy", fields: [invitedById], references: [id], onDelete: Restrict)
+  user      User? @relation("staffInvitationAccepted", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+}
+
+// ─── Sign-in ─────────────────────────────────────────────────────────
+
+enum SessionStage {
+  /// Staff: email or Microsoft accepted; waiting for their passkey.
+  PASSKEY_PENDING
+  /// Staff without a passkey yet: must add one before anything else.
+  PASSKEY_SETUP
+  /// Fully signed in.
+  ACTIVE
+}
+
+/// A browser session. Only the SHA-256 hash of the cookie value is stored.
+model Session {
+  id                   String       @id @default(cuid())
+  tokenHash            String       @unique
+  userId               String
+  /// Mirrors the user's kind, so a customer cookie can never open /admin.
+  audience             UserKind
+  stage                SessionStage
+  /// The organisation a business user is buying for. Null: buying for themselves.
+  activeOrganisationId String?
+  expiresAt            DateTime
+  lastSeenAt           DateTime     @default(now())
+  revokedAt            DateTime?
+  /// When this session last passed a passkey or email code. Changing sign-in
+  /// methods and staff settings need one in the last 15 minutes.
+  stepUpAt             DateTime?
+  ipAddress            String?
+  userAgent            String?
+  createdAt            DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// A six-digit code emailed to prove someone owns an address. Only an
+/// HMAC of the code is kept; it works once, for ten minutes, five tries.
+model EmailCode {
+  id        String    @id @default(cuid())
+  /// Stored lower-cased.
+  email     String
+  audience  UserKind
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  ipAddress String?
+  createdAt DateTime  @default(now())
+
+  @@index([email, createdAt])
+}
+
+enum IdentityProvider {
+  MICROSOFT
+  GOOGLE
+}
+
+/// A Microsoft or Google account someone signs in with.
+model ExternalIdentity {
+  id         String           @id @default(cuid())
+  userId     String
+  provider   IdentityProvider
+  /// Microsoft "tid:oid", Google "sub".
+  subject    String
+  email      String
+  createdAt  DateTime         @default(now())
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subject])
+  @@unique([userId, provider])
+}
+
+/// A passkey (WebAuthn credential): fingerprint, face or device PIN.
+model Passkey {
+  id           String    @id @default(cuid())
+  userId       String
+  /// base64url credential id, as the browser reports it.
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      Int       @default(0)
+  transports   String[]
+  backedUp     Boolean   @default(false)
+  name         String
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─── Audit ───────────────────────────────────────────────────────────
+
+enum ActorKind {
+  CUSTOMER
+  STAFF
+  SYSTEM
+}
+
+/// Everything that changed, by whom. Never edited or deleted. Rows about
+/// a business customer carry its organisationId; rows about one person
+/// carry subjectUserId.
+model AuditEvent {
+  id                String    @id @default(cuid())
+  organisationId    String?
+  subjectUserId     String?
+  actorKind         ActorKind
+  actorUserId       String?
+  /// The name at the time, so the log still reads well if the person leaves.
+  actorLabel        String
+  /// Dotted name, e.g. "market.updated".
+  action            String
+  targetType        String?
+  targetId          String?
+  /// One plain sentence.
+  summary           String
+  data              Json?
+  /// Shown to the customer in their account history.
+  visibleToCustomer Boolean   @default(false)
+  ipAddress         String?
+  createdAt         DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([organisationId, createdAt])
+  @@index([subjectUserId, createdAt])
+  @@index([action, createdAt])
+}
+
+// ─── Email ───────────────────────────────────────────────────────────
+
+enum EmailStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+/// Every email we send, queued in the same transaction as the change that
+/// caused it and sent by a background job. Secrets (codes, invitation
+/// links) are sealed in the payload and removed once sent.
+model OutboundEmail {
+  id            String      @id @default(cuid())
+  kind          String
+  toAddress     String
+  payload       Json
+  subject       String?
+  status        EmailStatus @default(QUEUED)
+  attempts      Int         @default(0)
+  nextAttemptAt DateTime    @default(now())
+  lastError     String?
+  sentAt        DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@index([status, nextAttemptAt])
+}

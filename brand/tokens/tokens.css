@@ -1,0 +1,104 @@
+/* ICT Distribution Africa design tokens.
+   Load Plus Jakarta Sans (400, 600, 700, 800) via next/font/google or the files in /fonts.
+   Light theme is the default. Dark applies when the OS asks for it (unless data-theme="light"),
+   or when <html data-theme="dark"> is set. */
+:root {
+  --ictd-forest: #0B2A24;
+  --ictd-green: #0F7B5F;
+  --ictd-mint: #3FD0A0;
+  --ictd-sunrise: #F2A33A;
+  --ictd-sand: #F7F5F0;
+
+  --color-bg: #FFFFFF;
+  --color-surface: #F7F5F0;
+  --color-surface-raised: #FFFFFF;
+  --color-border: #E4DFD4;
+  --color-text: #0B2A24;
+  --color-text-body: #2E3D38;
+  --color-text-muted: #5E6B66;
+  --color-primary: #0F7B5F;
+  --color-primary-hover: #0B6E54;
+  --color-primary-text: #0B6E54;
+  --color-on-primary: #FFFFFF;
+  --color-accent: #3FD0A0;
+  --color-highlight: #F2A33A;
+  --color-on-highlight: #0B2A24;
+  --color-highlight-text: #B4590F;
+  --color-success: #14724A;
+  --color-warning: #9A5300;
+  --color-danger: #C0333A;
+  --color-info: #1F5FA8;
+  --color-focus: #0F7B5F;
+
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-weight-regular: 400;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+  --tracking-headline: -0.02em;
+  --tracking-label: 0.12em;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #0B2A24;
+    --color-surface: #10372F;
+    --color-surface-raised: #133D34;
+    --color-border: #1E4A40;
+    --color-text: #FFFFFF;
+    --color-text-body: #C9D8D2;
+    --color-text-muted: #8FA59D;
+    --color-primary: #3FD0A0;
+    --color-primary-hover: #6BDDB6;
+    --color-primary-text: #3FD0A0;
+    --color-on-primary: #0B2A24;
+    --color-accent: #3FD0A0;
+    --color-highlight: #F2A33A;
+    --color-on-highlight: #0B2A24;
+    --color-highlight-text: #F2A33A;
+    --color-success: #5BDB9F;
+    --color-warning: #F5B54A;
+    --color-danger: #FF8A84;
+    --color-info: #7DB9FF;
+    --color-focus: #3FD0A0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --color-bg: #0B2A24;
+  --color-surface: #10372F;
+  --color-surface-raised: #133D34;
+  --color-border: #1E4A40;
+  --color-text: #FFFFFF;
+  --color-text-body: #C9D8D2;
+  --color-text-muted: #8FA59D;
+  --color-primary: #3FD0A0;
+  --color-primary-hover: #6BDDB6;
+  --color-primary-text: #3FD0A0;
+  --color-on-primary: #0B2A24;
+  --color-accent: #3FD0A0;
+  --color-highlight: #F2A33A;
+  --color-on-highlight: #0B2A24;
+  --color-highlight-text: #F2A33A;
+  --color-success: #5BDB9F;
+  --color-warning: #F5B54A;
+  --color-danger: #FF8A84;
+  --color-info: #7DB9FF;
+  --color-focus: #3FD0A0;
+  color-scheme: dark;
+}
