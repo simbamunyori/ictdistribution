@@ -1,6 +1,7 @@
 import { Check, Package, Plus } from "lucide-react";
 import Link from "next/link";
 import { toggleCompareAction } from "@/app/(site)/compare-actions";
+import type { Standing } from "@/lib/standing";
 import type { ProductCard as Card } from "@/server/catalogue/shop";
 import { AddToCart } from "./add-to-cart";
 import { PriceTag } from "./price-tag";
@@ -9,6 +10,7 @@ import { PriceTag } from "./price-tag";
 export interface Where {
   locale: string;
   timeZone: string;
+  standing: Standing;
 }
 
 /** A product's picture, from our own resized copies, or a plain placeholder. */
@@ -38,6 +40,28 @@ export function CompareToggle({ id, comparing, back }: { id: string; comparing: 
   );
 }
 
+/** Why there is no price: not on sale now, or sold to businesses we have approved. */
+export function NoPrice({ sellToIndividuals, standing }: { sellToIndividuals: boolean; standing: Standing }) {
+  if (sellToIndividuals || standing === "trade") return <p className="text-callout text-ink-muted">Not available to order right now</p>;
+  if (standing === "unverified")
+    return (
+      <p className="text-callout text-ink-muted">
+        For businesses. Prices show once{" "}
+        <Link href="/account/business" className="text-link underline underline-offset-4">
+          we have checked your business
+        </Link>
+      </p>
+    );
+  return (
+    <p className="text-callout text-ink-muted">
+      For businesses.{" "}
+      <Link href="/sign-up?for=business" className="text-link underline underline-offset-4">
+        Register to see prices
+      </Link>
+    </p>
+  );
+}
+
 export function ProductCard({ product, comparing, back, where, headingLevel = 3 }: { product: Card; comparing: boolean; back: string; where: Where; headingLevel?: 2 | 3 }) {
   const Heading = `h${headingLevel}` as const;
   return (
@@ -56,15 +80,8 @@ export function ProductCard({ product, comparing, back, where, headingLevel = 3 
         <div className="mt-auto flex flex-col gap-3 pt-2">
           {product.price ? (
             <PriceTag price={product.price} locale={where.locale} timeZone={where.timeZone} />
-          ) : product.sellToIndividuals ? (
-            <p className="text-callout text-ink-muted">Not available to order right now</p>
           ) : (
-            <p className="text-callout text-ink-muted">
-              For businesses.{" "}
-              <Link href="/sign-up?for=business" className="text-link underline underline-offset-4">
-                Register to see prices
-              </Link>
-            </p>
+            <NoPrice sellToIndividuals={product.sellToIndividuals} standing={where.standing} />
           )}
           <div className="flex flex-wrap items-center justify-between gap-2">
             {product.price ? <AddToCart productId={product.id} size="sm" label="Add" name={`${product.brand} ${product.name}`} idPrefix={`card-${product.id}`} /> : <span />}

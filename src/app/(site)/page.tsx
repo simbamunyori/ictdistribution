@@ -10,7 +10,7 @@ import { cardsFor } from "@/server/catalogue/shop";
 import { prisma } from "@/server/db";
 import { featuredIds, shopSettings } from "@/server/shop/settings";
 import { specialsFor } from "@/server/shop/showcase";
-import { shopPrices } from "@/server/shop/viewer";
+import { shopPrices, shopWhere } from "@/server/shop/viewer";
 
 const RANGE = [
   { icon: Laptop, title: "Laptops and desktops", text: "Everyday notebooks to workstations, with monitors, SSDs and memory." },
@@ -23,7 +23,7 @@ export default async function Home() {
   const prices = await shopPrices();
   const market = prices.market;
   const [settings, specials, featured, compare] = await Promise.all([shopSettings(prisma), specialsFor(prisma, prices, { featured: true }), featuredIds(prisma).then((ids) => cardsFor(prisma, ids, prices)), compareIds()]);
-  const where = { locale: market.locale, timeZone: market.timeZone };
+  const where = await shopWhere();
   return (
     <SiteFrame>
       <section className="border-b border-line bg-surface">

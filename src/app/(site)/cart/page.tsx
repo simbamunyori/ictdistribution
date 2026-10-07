@@ -12,10 +12,10 @@ import { cn } from "@/lib/cn";
 import { formatMoney } from "@/lib/money";
 import { deliveryFee } from "@/lib/shop-pricing";
 import { prisma } from "@/server/db";
-import { cartLines, priceLines, subtotal } from "@/server/shop/cart";
+import { cartLines, priceLines, subtotal, TRADE_MAX_LINE } from "@/server/shop/cart";
 import { currentCart } from "@/server/shop/cart-cookie";
 import { shopSettings } from "@/server/shop/settings";
-import { shopPrices } from "@/server/shop/viewer";
+import { shopPrices, shopWhere } from "@/server/shop/viewer";
 
 export const metadata: Metadata = { title: "Your cart", robots: { index: false } };
 
@@ -25,7 +25,8 @@ export default async function CartPage({ searchParams }: { searchParams: Promise
   const lines = cart ? await priceLines(prisma, await cartLines(prisma, cart.id), prices) : [];
   const market = await prisma.market.findUniqueOrThrow({ where: { code: prices.market.code } });
   const points = await prisma.collectionPoint.count({ where: { marketCode: market.code, active: true } });
-  const where = { locale: market.locale, timeZone: market.timeZone };
+  const where = await shopWhere();
+  const trade = where.standing === "trade";
   const money = (amountMinor: bigint) => formatMoney({ amountMinor, currency: market.currency }, market.locale);
   const sub = subtotal(lines, market.currency);
   const fee = deliveryFee(sub.amountMinor, market);
@@ -65,7 +66,15 @@ export default async function CartPage({ searchParams }: { searchParams: Promise
                       <p className="mt-1 text-callout text-ink-body">
                         {l.specialUnit ? (
                           <>
-                            {money(l.specialUnit.amountMinor)} each{l.specialUnits < l.quantity ? ` for ${l.specialUnits}, then ${money(l.usualUnit.amountMinor)}` : ""}{" "}
+                            {money(l.specialUnit.amountMinor)} each{l.specialUnits < l.quantity ? ` for ${l.specialUnits}, then ${money((l.volumeUnit ?? l.usualUnit).amountMinor)}` : ""}{" "}
+                            <span className="text-ink-muted line-through">
+                              <span className="sr-only">usually </span>
+                              {money(l.usualUnit.amountMinor)}
+                            </span>
+                          </>
+                        ) : l.volumeUnit && l.volumeDiscountBps ? (
+                          <>
+                            {money(l.volumeUnit.amountMinor)} each for {l.quantity}{" "}
                             <span className="text-ink-muted line-through">
                               <span className="sr-only">usually </span>
                               {money(l.usualUnit.amountMinor)}
@@ -74,6 +83,11 @@ export default async function CartPage({ searchParams }: { searchParams: Promise
                         ) : (
                           <>{money(l.usualUnit.amountMinor)} each</>
                         )}
+                      </p>
+                    ) : null}
+                    {l.volumeDiscountBps ? (
+                      <p className="text-caption text-ink-muted">
+                        Buying {l.quantity} takes {l.volumeDiscountBps / 100}% off{l.specialUnits ? " the units not on special" : ""}.
                       </p>
                     ) : null}
                     {l.special ? (
@@ -87,13 +101,17 @@ export default async function CartPage({ searchParams }: { searchParams: Promise
                       <input type="hidden" name="back" value="/cart" />
                       <label className="flex flex-col gap-1 text-caption font-semibold text-ink-muted">
                         Quantity
-                        <select name="quantity" defaultValue={String(l.quantity)} className={cn(inputClass, "w-20")}>
-                          {Array.from({ length: Math.max(settings.maxLineQuantity, l.quantity) }, (_, i) => (
-                            <option key={i + 1} value={i + 1}>
-                              {i + 1}
-                            </option>
-                          ))}
-                        </select>
+                        {trade ? (
+                          <input name="quantity" type="number" inputMode="numeric" min={1} max={TRADE_MAX_LINE} step={1} required defaultValue={String(l.quantity)} className={cn(inputClass, "w-28")} />
+                        ) : (
+                          <select name="quantity" defaultValue={String(l.quantity)} className={cn(inputClass, "w-20")}>
+                            {Array.from({ length: Math.max(settings.maxLineQuantity, l.quantity) }, (_, i) => (
+                              <option key={i + 1} value={i + 1}>
+                                {i + 1}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </label>
                       <button type="submit" className={buttonClass("secondary", "sm")}>
                         Update

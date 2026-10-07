@@ -16,6 +16,10 @@ export interface StaffActor {
 export const STAFF_PERMISSIONS = {
   viewCustomers: "See customer accounts and their history",
   manageCustomers: "Change a business customer's type",
+  verifyCustomers: "Check business documents and approve or refuse trade accounts",
+  manageCustomerPrices: "Agree prices for one customer",
+  viewDocuments: "Open the documents businesses send to be checked",
+  manageCredit: "Decide credit applications and set credit limits and terms",
   managePriceLevels: "Change the price level of each customer type",
   manageMarkets: "Add and change markets and currencies",
   manageRates: "Accept held-back exchange rates and fetch new ones",
@@ -37,6 +41,10 @@ export type StaffPermission = keyof typeof STAFF_PERMISSIONS;
 const ALLOWED: Record<StaffPermission, StaffRole[]> = {
   viewCustomers: ["ADMIN", "SALES", "PROCUREMENT", "LOGISTICS", "FINANCE", "SUPPORT"],
   manageCustomers: ["ADMIN", "SALES"],
+  verifyCustomers: ["ADMIN", "SALES", "FINANCE"],
+  manageCustomerPrices: ["ADMIN", "SALES"],
+  viewDocuments: ["ADMIN", "SALES", "FINANCE"],
+  manageCredit: ["ADMIN", "FINANCE"],
   managePriceLevels: ["ADMIN"],
   manageMarkets: ["ADMIN"],
   manageRates: ["ADMIN", "FINANCE"],

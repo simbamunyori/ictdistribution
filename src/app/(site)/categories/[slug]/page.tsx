@@ -6,7 +6,7 @@ import { SiteFrame } from "@/components/site/site-frame";
 import { compareIds } from "@/server/catalogue/compare";
 import { browse, browseParamsFrom, shopCategories } from "@/server/catalogue/shop";
 import { prisma } from "@/server/db";
-import { shopPrices } from "@/server/shop/viewer";
+import { shopPrices, shopWhere } from "@/server/shop/viewer";
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -45,7 +45,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
         </nav>
         <h1 className="text-title font-bold">{c.name}</h1>
         {c.description ? <p className="mt-1 mb-6 max-w-2xl text-ink-muted">{c.description}</p> : <div className="mb-6" />}
-        <BrowseView path={`/categories/${slug}`} search={search} result={result} compare={compare} where={{ locale: prices.market.locale, timeZone: prices.market.timeZone }} categoryLinks={links} />
+        <BrowseView path={`/categories/${slug}`} search={search} result={result} compare={compare} where={await shopWhere()} categoryLinks={links} />
       </div>
     </SiteFrame>
   );

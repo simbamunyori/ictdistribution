@@ -9,7 +9,7 @@ import { customerOrders, orderStateText } from "@/server/shop/orders";
 
 export const metadata: Metadata = { title: "Your orders" };
 
-const TONE = { AWAITING_PAYMENT: "warning", PAID: "neutral", FULFILLED: "positive", CANCELLED: "negative" } as const;
+const TONE = { AWAITING_PAYMENT: "warning", PAID: "neutral", ON_ACCOUNT: "neutral", FULFILLED: "positive", CANCELLED: "negative" } as const;
 
 export default async function AccountOrders() {
   const session = await requireCustomer("/account/orders");

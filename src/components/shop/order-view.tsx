@@ -35,13 +35,14 @@ export function OrderView({ order: o, staff = false }: { order: ViewableOrder; s
         </Alert>
       ) : null}
 
-      {o.status === "AWAITING_PAYMENT" && o.paymentMethod === "BANK_TRANSFER" ? (
+      {(o.status === "AWAITING_PAYMENT" && o.paymentMethod === "BANK_TRANSFER") || (o.paymentMethod === "ACCOUNT" && o.status !== "CANCELLED" && o.paidAt === null && owing > 0n) ? (
         <section aria-labelledby="pay" className="rounded-lg border-2 border-brand bg-raised p-5">
           <h2 id="pay" className="text-headline font-bold">
             How to pay
           </h2>
           <p className="mt-2">
-            Transfer {money(owing)} {o.payBy ? `by ${formatDate(o.payBy, locale, timeZone)}` : ""} and use <strong className="font-mono">{o.number}</strong> as the reference. Unpaid orders are cancelled after that date.
+            Transfer {money(owing)} {o.payBy ? `by ${formatDate(o.payBy, locale, timeZone)}` : ""} and use <strong className="font-mono">{o.number}</strong> as the reference.{" "}
+            {o.paymentMethod === "ACCOUNT" ? "It is on your account, so we send it before it is paid." : "Unpaid orders are cancelled after that date."}
           </p>
           <p className="mt-3 rounded-md bg-surface p-4 font-mono text-callout whitespace-pre-line">{o.bankDetails}</p>
           {paid > 0n ? <p className="mt-3 text-callout text-ink-muted">We have received {money(paid)} so far.</p> : null}
@@ -121,7 +122,7 @@ export function OrderView({ order: o, staff = false }: { order: ViewableOrder; s
           <h2 id="contact" className="font-bold">
             Contact and payment
           </h2>
-          <p className="mt-2 text-callout whitespace-pre-line">{[o.name, o.email, o.phone, PAYMENT_LABEL[o.paymentMethod]].join("\n")}</p>
+          <p className="mt-2 text-callout whitespace-pre-line">{[o.name, o.email, o.phone, PAYMENT_LABEL[o.paymentMethod], o.customerReference ? `Your reference: ${o.customerReference}` : ""].filter(Boolean).join("\n")}</p>
         </section>
       </div>
       {o.notes ? (

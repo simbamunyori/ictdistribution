@@ -6,14 +6,14 @@ import { SiteFrame } from "@/components/site/site-frame";
 import { compareIds } from "@/server/catalogue/compare";
 import { prisma } from "@/server/db";
 import { specialsFor } from "@/server/shop/showcase";
-import { shopPrices } from "@/server/shop/viewer";
+import { shopPrices, shopWhere } from "@/server/shop/viewer";
 
 export const metadata: Metadata = { title: "Specials", description: "Lower prices on laptops, phones, monitors and more, for a limited time." };
 
 export default async function SpecialsPage() {
   const prices = await shopPrices();
   const [specials, compare] = await Promise.all([specialsFor(prisma, prices), compareIds()]);
-  const where = { locale: prices.market.locale, timeZone: prices.market.timeZone };
+  const where = await shopWhere();
   return (
     <SiteFrame back="/specials">
       <div className="mx-auto max-w-6xl px-4 py-10 md:px-6">

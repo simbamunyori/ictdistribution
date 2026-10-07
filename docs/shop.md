@@ -10,8 +10,10 @@ A shop price is the product's landed cost plus the Individual markup
 current rate with the market's buffer, and rounded up to the market's
 step (`/admin/markets`). Prices include tax, and pages say so.
 
-Only products marked **Sell to individuals** show a price. The rest show
-"Sign up as a business to see prices". Products with no active supplier
+Guests and individuals see prices only for products marked **Sell to
+individuals**. The rest show "Sign up as a business to see prices".
+Approved businesses see every product at their own price level; see
+[business.md](business.md). Products with no active supplier
 offer, or a market with no exchange rate yet, show no price and can't be
 added to a cart.
 

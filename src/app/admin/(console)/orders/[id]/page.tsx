@@ -10,19 +10,19 @@ import { formatDate, formatDateTime } from "@/lib/zoned";
 import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
 import { pricingSettings } from "@/server/pricing/rates";
-import { ORDER_STATUS_LABEL } from "@/server/shop/orders";
+import { ORDER_STATUS_LABEL, TO_SEND } from "@/server/shop/orders";
 import { staffCan } from "@/server/staff/access";
 
 export const metadata: Metadata = { title: "Order" };
 
-const TONE = { AWAITING_PAYMENT: "warning", PAID: "highlight", FULFILLED: "positive", CANCELLED: "neutral" } as const;
+const TONE = { AWAITING_PAYMENT: "warning", PAID: "highlight", ON_ACCOUNT: "highlight", FULFILLED: "positive", CANCELLED: "neutral" } as const;
 
 export default async function OrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await requireStaff();
   const role = { staffRole: session.user.staffRole };
   if (!staffCan(role, "viewOrders")) redirect("/admin");
-  const order = await prisma.order.findUnique({ where: { id }, include: { lines: { orderBy: { sortOrder: "asc" } }, payments: { orderBy: { receivedOn: "asc" } }, market: true } });
+  const order = await prisma.order.findUnique({ where: { id }, include: { lines: { orderBy: { sortOrder: "asc" } }, payments: { orderBy: { receivedOn: "asc" } }, market: true, organisation: { select: { id: true, name: true } } } });
   if (!order) notFound();
   const { locale, timeZone } = order.market;
   const money = (amountMinor: bigint, currency = order.currency) => formatMoney({ amountMinor, currency }, locale);
@@ -32,7 +32,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const base = showCost ? (await pricingSettings(prisma)).baseCurrency : "";
   const cost = order.lines.reduce((s, l) => (l.unitCostBaseMinor === null ? s : s + l.unitCostBaseMinor * BigInt(l.quantity)), 0n);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  const open = order.status === "AWAITING_PAYMENT" || order.status === "PAID";
+  const open = order.status === "AWAITING_PAYMENT" || TO_SEND.includes(order.status);
+  // On account, money can arrive before or after it is sent.
+  const takesPayment = order.status === "AWAITING_PAYMENT" || (order.paymentMethod === "ACCOUNT" && order.status !== "CANCELLED" && order.paidAt === null);
   return (
     <>
       <p className="mb-2 text-callout">
@@ -45,21 +47,34 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         lead={
           <>
             <Badge tone={TONE[order.status]}>{ORDER_STATUS_LABEL[order.status]}</Badge> Placed {formatDateTime(order.createdAt, locale, timeZone)} in {order.market.name}
-            {order.organisationId ? ", for an organisation" : order.userId ? ", by a signed-in customer" : ", as a guest"}.
+            {order.organisation ? (
+              <>
+                , for{" "}
+                <Link href={`/admin/customers/${order.organisation.id}`} className="text-link underline underline-offset-4">
+                  {order.organisation.name}
+                </Link>
+              </>
+            ) : order.userId ? (
+              ", by a signed-in customer"
+            ) : (
+              ", as a guest"
+            )}
+            {order.customerReference ? `, their reference ${order.customerReference}` : ""}.
           </>
         }
       />
       <div className="flex max-w-4xl flex-col gap-6">
-        {order.status === "AWAITING_PAYMENT" && staffCan(role, "recordPayments") ? (
+        {takesPayment && staffCan(role, "recordPayments") ? (
           <Card>
             <h2 className="mb-1 text-headline font-bold">Record a payment</h2>
             <p className="mb-4 text-callout text-ink-muted">
-              {money(owing)} to pay{order.payBy ? ` by ${formatDate(order.payBy, locale, timeZone)}` : ""}, with reference {order.number}. The order is marked paid and the customer told once payments cover the total.
+              {money(owing)} to pay{order.payBy ? ` by ${formatDate(order.payBy, locale, timeZone)}` : ""}, with reference {order.number}.{" "}
+              {order.paymentMethod === "ACCOUNT" ? "It is on account, so it can be sent before it is paid." : "The order is marked paid and the customer told once payments cover the total."}
             </p>
             <PaymentForm orderId={order.id} currency={order.currency} owing={toPlainAmount({ amountMinor: owing, currency: order.currency })} today={today} />
           </Card>
         ) : null}
-        {order.status === "PAID" && staffCan(role, "fulfilOrders") ? (
+        {TO_SEND.includes(order.status) && staffCan(role, "fulfilOrders") ? (
           <Card>
             <h2 className="mb-4 text-headline font-bold">{order.fulfilment === "COLLECTION" ? "Ready to collect" : "Send it"}</h2>
             <FulfilForm orderId={order.id} collection={order.fulfilment === "COLLECTION"} />

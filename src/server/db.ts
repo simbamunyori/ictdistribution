@@ -16,7 +16,7 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
  * with that column is missing here (src/server/db.test.ts). AuditEvent is
  * left out on purpose: it is read through src/server/audit.ts.
  */
-export const TENANT_MODELS = new Set<string>(["Membership", "Invitation"]);
+export const TENANT_MODELS = new Set<string>(["Membership", "Invitation", "OrganisationDocument", "CustomerPrice", "CreditApplication"]);
 
 const WHERE_OPS = new Set([
   "findUnique",

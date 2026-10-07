@@ -6,7 +6,7 @@ import type { ShopPrice } from "@/server/shop/prices";
 import { Countdown } from "./countdown";
 
 /** The shop price, with the usual price struck through and a countdown when a special applies. */
-export function PriceTag({ price, locale, timeZone, taxName, size = "md", showSpecial = true }: { price: Pick<ShopPrice, "amount" | "was" | "special">; locale: string; timeZone: string; taxName?: string; size?: "md" | "lg"; showSpecial?: boolean }) {
+export function PriceTag({ price, locale, timeZone, taxName, size = "md", showSpecial = true }: { price: Pick<ShopPrice, "amount" | "was" | "special"> & { agreed?: boolean }; locale: string; timeZone: string; taxName?: string; size?: "md" | "lg"; showSpecial?: boolean }) {
   return (
     <div className="flex flex-col gap-1">
       <p className="flex flex-wrap items-baseline gap-x-2">
@@ -19,6 +19,7 @@ export function PriceTag({ price, locale, timeZone, taxName, size = "md", showSp
         ) : null}
         {taxName ? <span className="text-caption text-ink-muted">including {taxName}</span> : null}
       </p>
+      {price.agreed ? <p className="text-caption font-semibold text-link">Your agreed price</p> : null}
       {showSpecial && price.special ? <SpecialLine special={price.special} locale={locale} timeZone={timeZone} /> : null}
     </div>
   );

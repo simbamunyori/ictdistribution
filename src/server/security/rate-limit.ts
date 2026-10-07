@@ -26,6 +26,8 @@ export const LIMITS = {
   checkoutPerIp: { max: 30, windowMs: 10 * 60_000 },
   /** Orders actually placed from one address. */
   ordersPerIp: { max: 10, windowMs: 60 * 60_000 },
+  /** Company documents a business uploads. */
+  documentsPerOrg: { max: 30, windowMs: 60 * 60_000 },
 } satisfies Record<string, Limit>;
 
 export class RateLimitedError extends Error {

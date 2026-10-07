@@ -80,6 +80,15 @@ export async function seedDemo(db: PrismaClient): Promise<string[]> {
     await db.membership.createMany({ data: [{ organisationId: org.id, userId: o.id, role: "OWNER" }, { organisationId: org.id, userId: b.id, role: "BUYER" }] });
     added.push(`${org.name} with ${owner} and ${buyer}`);
   }
+  // The demo business is checked and has demo credit, so trade prices and buying on account can be tried.
+  const demoOrg = await db.organisation.findFirst({ where: { name: "Kgale Hill Systems (demo)", verification: "NOT_SUBMITTED" } });
+  if (demoOrg) {
+    await db.organisation.update({
+      where: { id: demoOrg.id },
+      data: { taxNumber: "C00000000000", address: "Plot 1 (demo), Gaborone", directors: "Kabo Demo", verification: "APPROVED", submittedAt: new Date(), verifiedAt: new Date(), verifiedByLabel: "Seed", creditLimitMinor: 250_000_00n, creditTermsDays: 30 },
+    });
+    added.push(`${demoOrg.name} approved, with demo credit of 250,000.00 on 30 days`);
+  }
   // A demo Admin for the browser checks. With no passkey, a real sign-in stops at adding one.
   if (!(await db.user.findUnique({ where: { email: staff } }))) {
     await db.user.create({ data: { kind: "STAFF", email: staff, name: "Thabo Demo", staffRole: "ADMIN", emailVerifiedAt: new Date() } });

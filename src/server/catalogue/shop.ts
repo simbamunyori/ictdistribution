@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient, SpecField } from "@prisma/client";
 import { cache } from "react";
 import { formatSpec, mpnKey, searchTerms, type SpecValue, type SpecValues } from "@/lib/catalogue";
-import { priceOf, type PriceContext, type ShopPrice } from "@/server/shop/prices";
+import { priceOf, usualPrice, volumeBreaksFor, volumeUnit, type PriceContext, type ShopPrice } from "@/server/shop/prices";
 import { specFieldsOf } from "./categories";
 
 /**
@@ -58,8 +58,8 @@ export interface ProductCard {
 
 /** The shop price of a product row, for products sold to individuals. */
 function priceRow(p: Pick<CardRow, "id" | "sellToIndividuals" | "landedCostMinor" | "leadTimeDays" | "categoryId"> & { category: { parentId: string | null } }, ctx?: PriceContext): ShopPrice | null {
-  if (!ctx || !p.sellToIndividuals) return null;
-  return priceOf(ctx, { id: p.id, categoryId: p.categoryId, parentCategoryId: p.category.parentId, landedCostMinor: p.landedCostMinor, leadTimeDays: p.leadTimeDays });
+  if (!ctx) return null;
+  return priceOf(ctx, { id: p.id, sellToIndividuals: p.sellToIndividuals, categoryId: p.categoryId, parentCategoryId: p.category.parentId, landedCostMinor: p.landedCostMinor, leadTimeDays: p.leadTimeDays });
 }
 
 function toCard(p: CardRow, ctx?: PriceContext): ProductCard {
@@ -320,9 +320,14 @@ export async function shopProduct(db: Pick<PrismaClient, "product" | "categorySu
   const fields = specFieldsOf(p.category);
   const specs = p.specs as SpecValues;
   const linked = [...p.links.map((l) => l.related), ...p.linkedBy.map((l) => l.product)];
+  const priceable = { id: p.id, sellToIndividuals: p.sellToIndividuals, categoryId: p.categoryId, parentCategoryId: p.category.parentId, landedCostMinor, leadTimeDays };
+  const usual = ctx ? usualPrice(ctx, priceable) : null;
+  // Lower unit prices for buying more, from the price level's volume breaks.
+  const volume = ctx && usual ? volumeBreaksFor(ctx, priceable).map((b) => ({ minQuantity: b.minQuantity, discountBps: b.discountBps, unit: volumeUnit(ctx, priceable, usual, b.minQuantity).unit })).reverse() : [];
   return {
     ...p,
     price: priceRow({ ...p, landedCostMinor, leadTimeDays }, ctx),
+    volume,
     specRows: fields.map((f) => ({ label: f.label, value: formatSpec(f, specs[f.key]) })).filter((r) => r.value),
     images: p.media.filter((m) => m.kind === "IMAGE"),
     datasheets: p.media.filter((m) => m.kind === "DATASHEET"),
