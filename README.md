@@ -76,6 +76,8 @@ The integration tests empty and reseed `TEST_DATABASE_URL` (it must end in
 | Sourcing rule (which supplier) | `src/lib/sourcing.ts` | /admin/sourcing |
 | Price list imports | `src/server/suppliers/price-lists.ts` | /admin/suppliers |
 | Shop browse, filters, compare | `src/server/catalogue/shop.ts` | |
+| Shop prices, specials, cart | `src/server/shop/` | /admin/specials, /admin/shop |
+| Orders and bank transfer payments | `src/server/shop/orders.ts` | /admin/orders |
 | Background jobs | `src/server/jobs/boss.ts` | |
 
 Business rules (markups, buffers, rounding, rate rules, sourcing rules, who is staff) live
@@ -88,5 +90,6 @@ are never shown to customers.
 rollback, nightly backups and the weekly restore test. Sign-in with
 Microsoft and Google: [docs/sign-in-setup.md](docs/sign-in-setup.md).
 Exchange rates: [docs/exchange-rates.md](docs/exchange-rates.md). The
-catalogue, suppliers and price list imports: [docs/catalogue.md](docs/catalogue.md). Choices
+catalogue, suppliers and price list imports: [docs/catalogue.md](docs/catalogue.md). The
+shop, specials and orders: [docs/shop.md](docs/shop.md). Choices
 made along the way: [docs/decisions.md](docs/decisions.md).

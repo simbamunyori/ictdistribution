@@ -6,6 +6,7 @@ import { guessColumns, missingColumns, parseCsv, priceMoveBps, PRICE_LIST_FIELD_
 import { audit, staffAudit, SYSTEM_ACTOR, type AuditInput } from "@/server/audit";
 import { brandFor, refreshSearchText } from "@/server/catalogue/products";
 import { DomainError } from "@/server/errors";
+import { refreshCosts } from "@/server/shop/costs";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 
 /**
@@ -286,7 +287,7 @@ export interface ApplyOptions {
  */
 export async function applyImport(db: PrismaClient, who: Who, importId: string, opts: ApplyOptions, ip?: string | null, now = new Date()) {
   if (who) assertStaffCan(who, "importPriceLists");
-  return db.$transaction(
+  const counts = await db.$transaction(
     async (tx) => {
       const imp = await tx.priceListImport.findUnique({ where: { id: importId }, include: { supplier: true } });
       if (!imp) throw new DomainError("not-found", "No such price list.");
@@ -333,10 +334,14 @@ export async function applyImport(db: PrismaClient, who: Who, importId: string, 
       if (counts.drafts) parts.push(`${counts.drafts} draft products made`);
       if (counts.switchedOff) parts.push(`${counts.switchedOff} switched off`);
       await audit(tx, auditAs(who, { action: "price-list.applied", summary: `Applied ${imp.supplier.name}'s price list: ${parts.join(", ")}`, targetType: "Supplier", targetId: imp.supplierId, data: counts, ipAddress: ip }));
-      return counts;
+      return { ...counts, supplierId: imp.supplierId };
     },
     { timeout: 120_000 },
   );
+  const products = await db.supplierOffer.findMany({ where: { supplierId: counts.supplierId }, select: { productId: true } });
+  await refreshCosts(db, products.map((p) => p.productId), now);
+  const { supplierId: _supplier, ...rest } = counts;
+  return rest;
 }
 
 /** A draft product from a price list line, for staff to finish before it goes in the shop. */

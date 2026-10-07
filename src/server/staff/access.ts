@@ -23,6 +23,11 @@ export const STAFF_PERMISSIONS = {
   viewSuppliers: "See suppliers, their costs and price lists",
   manageSuppliers: "Add and change suppliers, their costs and how supplier choice works",
   importPriceLists: "Import supplier price lists and apply them",
+  manageShop: "Change the shop's home page, featured products, specials, delivery and bank details",
+  viewOrders: "See shop orders and their customers",
+  recordPayments: "Record payments received for orders",
+  fulfilOrders: "Mark orders as sent or ready to collect",
+  cancelOrders: "Cancel orders",
   manageStaff: "Invite staff, change their role and deactivate them",
   viewAudit: "Read the full audit log",
 } as const;
@@ -39,6 +44,11 @@ const ALLOWED: Record<StaffPermission, StaffRole[]> = {
   viewSuppliers: ["ADMIN", "SALES", "PROCUREMENT", "LOGISTICS", "FINANCE"],
   manageSuppliers: ["ADMIN", "PROCUREMENT"],
   importPriceLists: ["ADMIN", "PROCUREMENT"],
+  manageShop: ["ADMIN", "SALES"],
+  viewOrders: ["ADMIN", "SALES", "LOGISTICS", "FINANCE", "SUPPORT"],
+  recordPayments: ["ADMIN", "FINANCE"],
+  fulfilOrders: ["ADMIN", "SALES", "LOGISTICS"],
+  cancelOrders: ["ADMIN", "SALES", "FINANCE"],
   manageStaff: ["ADMIN"],
   viewAudit: ["ADMIN", "FINANCE"],
 };

@@ -58,4 +58,52 @@ export const TEMPLATES: Record<string, Template> = {
       paragraphs: [`${str(p.what)} was added to your account.`, "If this wasn't you, sign in and remove it, then tell us."],
     },
   }),
+  "order.placed": (p, ctx) => {
+    const bank = str(p.method) === "BANK_TRANSFER";
+    const collect = str(p.fulfilment) === "COLLECTION";
+    return {
+      subject: `Order ${str(p.number)} received`,
+      body: {
+        heading: `Thank you, ${str(p.name)}`,
+        paragraphs: [
+          `We have your order ${str(p.number)} for ${str(p.total)}.`,
+          ...(bank ? [`Pay by bank transfer by ${str(p.payBy)}, with ${str(p.number)} as the reference. We start on your order when the money arrives, and cancel it if it hasn't arrived by then.`] : []),
+          collect ? `Collect it from ${str(p.collection).split("\n").join(", ")}.` : `We deliver to ${str(p.address)}.`,
+        ],
+        list: str(p.lines).split("\n").filter(Boolean),
+        ...(bank ? { box: { title: "Pay into", text: `${str(p.bankDetails)}\nReference: ${str(p.number)}` } } : {}),
+        button: { label: "See your order", url: `${ctx.appUrl}/orders/${encodeURIComponent(str(p.number))}?t=${encodeURIComponent(str(p.token))}` },
+        footnote: "Keep this email: the button shows your order without signing in.",
+      },
+    };
+  },
+  "order.paid": (p) => ({
+    subject: `Payment received for order ${str(p.number)}`,
+    body: {
+      heading: "Payment received",
+      paragraphs: [`Thank you. Order ${str(p.number)} is paid in full.`, str(p.fulfilment) === "COLLECTION" ? "We'll email you when it's ready to collect." : "We'll email you when it's on its way."],
+    },
+  }),
+  "order.sent": (p) => ({
+    subject: `Order ${str(p.number)} is on its way`,
+    body: {
+      heading: "Your order is on its way",
+      paragraphs: [`Order ${str(p.number)} has left us for ${str(p.address)}.`, ...(str(p.note) ? [str(p.note)] : [])],
+    },
+  }),
+  "order.ready": (p) => ({
+    subject: `Order ${str(p.number)} is ready to collect`,
+    body: {
+      heading: "Ready to collect",
+      paragraphs: [`Order ${str(p.number)} is ready. Bring this email and an ID.`, ...(str(p.note) ? [str(p.note)] : [])],
+      box: { title: "Collect from", text: str(p.collection) },
+    },
+  }),
+  "order.cancelled": (p) => ({
+    subject: `Order ${str(p.number)} cancelled`,
+    body: {
+      heading: "Your order is cancelled",
+      paragraphs: [`We cancelled order ${str(p.number)}: ${str(p.reason)}.`, str(p.refund) ? "We'll refund what you paid and email you when it's done." : "Nothing was paid, so nothing more is needed."],
+    },
+  }),
 };

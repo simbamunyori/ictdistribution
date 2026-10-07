@@ -2,6 +2,7 @@ import type { Category, Prisma, PrismaClient, SourcingRule, SpecField, SpecKind 
 import { SPEC_KEY, slugify, specKey } from "@/lib/catalogue";
 import { audit, staffAudit } from "@/server/audit";
 import { DomainError } from "@/server/errors";
+import { refreshCosts } from "@/server/shop/costs";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 
 /**
@@ -106,7 +107,7 @@ export async function createCategory(db: PrismaClient, actor: StaffActor, input:
 export async function updateCategory(db: PrismaClient, actor: StaffActor, id: string, input: CategoryInput, ip?: string | null): Promise<Category> {
   assertStaffCan(actor, "manageCatalogue");
   const { name, slug, description } = checkCategory(input);
-  return db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     const before = await tx.category.findUnique({ where: { id } });
     if (!before) throw new DomainError("not-found", "No such category.");
     await checkPlacement(tx, id, input.parentId);
@@ -121,8 +122,13 @@ export async function updateCategory(db: PrismaClient, actor: StaffActor, id: st
     if (before.sourcingRule !== input.sourcingRule) changes.push(`supplier rule to ${input.sourcingRule ?? "the default"}`);
     if (before.description !== description || before.sortOrder !== input.sortOrder) changes.push("details");
     if (changes.length) await audit(tx, staffAudit(actor, { action: "category.updated", summary: `Changed ${before.name}: ${changes.join(", ")}`, targetType: "Category", targetId: id, ipAddress: ip }));
-    return after;
+    return { after, ruleChanged: before.sourcingRule !== input.sourcingRule };
   });
+  if (result.ruleChanged) {
+    const products = await db.product.findMany({ where: { OR: [{ categoryId: id }, { category: { parentId: id } }] }, select: { id: true } });
+    await refreshCosts(db, products.map((p) => p.id));
+  }
+  return result.after;
 }
 
 /** Only an empty category can go: no products and no subcategories. */

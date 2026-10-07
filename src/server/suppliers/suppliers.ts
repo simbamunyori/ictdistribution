@@ -3,6 +3,7 @@ import { isCountryCode } from "@/lib/countries";
 import { parseMoney, toPlainAmount } from "@/lib/money";
 import { audit, staffAudit } from "@/server/audit";
 import { DomainError } from "@/server/errors";
+import { refreshCosts } from "@/server/shop/costs";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 
 /**
@@ -140,7 +141,7 @@ export async function createSupplier(db: PrismaClient, actor: StaffActor, input:
 export async function updateSupplier(db: PrismaClient, actor: StaffActor, id: string, input: SupplierInput, ip?: string | null): Promise<Supplier> {
   assertStaffCan(actor, "manageSuppliers");
   const data = await checkSupplier(db, input);
-  return db.$transaction(async (tx) => {
+  const after = await db.$transaction(async (tx) => {
     const before = await tx.supplier.findUnique({ where: { id } });
     if (!before) throw new DomainError("not-found", "No such supplier.");
     const clash = await tx.supplier.findFirst({ where: { name: { equals: data.name, mode: "insensitive" }, id: { not: id } } });
@@ -156,17 +157,26 @@ export async function updateSupplier(db: PrismaClient, actor: StaffActor, id: st
     await audit(tx, staffAudit(actor, { action: "supplier.updated", summary: `Changed ${before.name}: ${changes.join(", ")}`, targetType: "Supplier", targetId: id, ipAddress: ip }));
     return after;
   });
+  await refreshCosts(db, await productsOf(db, id));
+  return after;
+}
+
+/** Products a supplier has offers for, to bring their costs up to date. */
+async function productsOf(db: Pick<PrismaClient, "supplierOffer">, supplierId: string) {
+  return (await db.supplierOffer.findMany({ where: { supplierId }, select: { productId: true } })).map((o) => o.productId);
 }
 
 /** Removes a supplier with its offers and price lists. The audit log keeps the history. */
 export async function removeSupplier(db: PrismaClient, actor: StaffActor, id: string, ip?: string | null) {
   assertStaffCan(actor, "manageSuppliers");
+  const products = await productsOf(db, id);
   await db.$transaction(async (tx) => {
     const s = await tx.supplier.findUnique({ where: { id }, include: { _count: { select: { offers: true } } } });
     if (!s) return;
     await tx.supplier.delete({ where: { id } });
     await audit(tx, staffAudit(actor, { action: "supplier.removed", summary: `Removed the supplier ${s.name} and its ${s._count.offers} offers`, targetType: "Supplier", targetId: id, ipAddress: ip }));
   });
+  await refreshCosts(db, products);
 }
 
 export async function setSupplierCategories(db: PrismaClient, actor: StaffActor, id: string, categoryIds: string[], ip?: string | null) {
@@ -303,14 +313,17 @@ export async function saveOffer(db: PrismaClient, actor: StaffActor, input: Offe
       }),
     );
   });
+  await refreshCosts(db, [input.productId], now);
 }
 
 export async function removeOffer(db: PrismaClient, actor: StaffActor, id: string, ip?: string | null) {
   assertStaffCan(actor, "manageSuppliers");
-  await db.$transaction(async (tx) => {
+  const productId = await db.$transaction(async (tx) => {
     const o = await tx.supplierOffer.findUnique({ where: { id }, include: { supplier: true, product: true } });
-    if (!o) return;
+    if (!o) return null;
     await tx.supplierOffer.delete({ where: { id } });
     await audit(tx, staffAudit(actor, { action: "offer.removed", summary: `Removed ${o.supplier.name}'s offer for ${o.product.name}`, targetType: "Product", targetId: o.productId, ipAddress: ip }));
+    return o.productId;
   });
+  if (productId) await refreshCosts(db, [productId]);
 }

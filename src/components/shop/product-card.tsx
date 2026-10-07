@@ -2,6 +2,14 @@ import { Check, Package, Plus } from "lucide-react";
 import Link from "next/link";
 import { toggleCompareAction } from "@/app/(site)/compare-actions";
 import type { ProductCard as Card } from "@/server/catalogue/shop";
+import { AddToCart } from "./add-to-cart";
+import { PriceTag } from "./price-tag";
+
+/** How prices read where the shopper is. */
+export interface Where {
+  locale: string;
+  timeZone: string;
+}
 
 /** A product's picture, from our own resized copies, or a plain placeholder. */
 export function ProductImage({ image, size = "thumb", className }: { image: Card["image"]; size?: "thumb" | "large"; className?: string }) {
@@ -30,7 +38,7 @@ export function CompareToggle({ id, comparing, back }: { id: string; comparing: 
   );
 }
 
-export function ProductCard({ product, comparing, back, headingLevel = 3 }: { product: Card; comparing: boolean; back: string; headingLevel?: 2 | 3 }) {
+export function ProductCard({ product, comparing, back, where, headingLevel = 3 }: { product: Card; comparing: boolean; back: string; where: Where; headingLevel?: 2 | 3 }) {
   const Heading = `h${headingLevel}` as const;
   return (
     <article className="flex w-full flex-col overflow-hidden rounded-lg border border-line bg-raised">
@@ -45,9 +53,23 @@ export function ProductCard({ product, comparing, back, headingLevel = 3 }: { pr
           </Link>
         </Heading>
         {product.highlights.length ? <p className="text-callout text-ink-muted">{product.highlights.join(" · ")}</p> : null}
-        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-          <span className="text-caption text-ink-muted">{product.sellToIndividuals ? "Prices open soon" : "For businesses"}</span>
-          <CompareToggle id={product.id} comparing={comparing} back={back} />
+        <div className="mt-auto flex flex-col gap-3 pt-2">
+          {product.price ? (
+            <PriceTag price={product.price} locale={where.locale} timeZone={where.timeZone} />
+          ) : product.sellToIndividuals ? (
+            <p className="text-callout text-ink-muted">Not available to order right now</p>
+          ) : (
+            <p className="text-callout text-ink-muted">
+              For businesses.{" "}
+              <Link href="/sign-up?for=business" className="text-link underline underline-offset-4">
+                Register to see prices
+              </Link>
+            </p>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {product.price ? <AddToCart productId={product.id} size="sm" label="Add" name={`${product.brand} ${product.name}`} idPrefix={`card-${product.id}`} /> : <span />}
+            <CompareToggle id={product.id} comparing={comparing} back={back} />
+          </div>
         </div>
       </div>
     </article>

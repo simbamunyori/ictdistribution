@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { clearCompareAction } from "@/app/(site)/compare-actions";
+import { PriceTag } from "@/components/shop/price-tag";
 import { CompareToggle, ProductImage } from "@/components/shop/product-card";
 import { SiteFrame } from "@/components/site/site-frame";
 import { buttonClass } from "@/components/ui/button";
@@ -9,13 +10,15 @@ import { cn } from "@/lib/cn";
 import { compareIds } from "@/server/catalogue/compare";
 import { compareProducts } from "@/server/catalogue/shop";
 import { prisma } from "@/server/db";
+import { shopPrices } from "@/server/shop/viewer";
 
 export const metadata: Metadata = { title: "Compare products", robots: { index: false } };
 
 export default async function Compare({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const q = await searchParams;
   const ids = await compareIds();
-  const { products, rows } = await compareProducts(prisma, ids);
+  const prices = await shopPrices();
+  const { products, rows } = await compareProducts(prisma, ids, prices);
   const onlyDiff = q.diff === "1" && products.length > 1;
   const shown = onlyDiff ? rows.filter((r) => r.differs) : rows;
   return (
@@ -50,6 +53,9 @@ export default async function Compare({ searchParams }: { searchParams: Promise<
                         <Link href={`/products/${p.slug}`} className="block font-bold text-ink hover:text-link hover:underline">
                           {p.name}
                         </Link>
+                        <div className="mt-2">
+                          {p.price ? <PriceTag price={p.price} locale={prices.market.locale} timeZone={prices.market.timeZone} showSpecial={false} /> : <span className="text-callout text-ink-muted">{p.sellToIndividuals ? "Not available to order" : "For businesses"}</span>}
+                        </div>
                         <div className="mt-2">
                           <CompareToggle id={p.id} comparing back="/compare" />
                         </div>

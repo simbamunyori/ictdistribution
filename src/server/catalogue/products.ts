@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient, Product, ProductStatus, SourcingRule } from 
 import { mpnKey, parseSpecValue, searchTextFor, slugify, type SpecValues } from "@/lib/catalogue";
 import { audit, staffAudit } from "@/server/audit";
 import { DomainError } from "@/server/errors";
+import { refreshCosts } from "@/server/shop/costs";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 import { specFieldsOf } from "./categories";
 
@@ -164,7 +165,7 @@ export async function createProduct(db: PrismaClient, actor: StaffActor, input: 
 export async function updateProduct(db: PrismaClient, actor: StaffActor, id: string, input: ProductInput, ip?: string | null): Promise<Product> {
   assertStaffCan(actor, "manageCatalogue");
   const v = checkProduct(input);
-  return db.$transaction(async (tx) => {
+  const after = await db.$transaction(async (tx) => {
     const before = await tx.product.findUnique({ where: { id }, include: { brand: true, category: true } });
     if (!before) throw new DomainError("not-found", "No such product.");
     await checkCategoryExists(tx, input.categoryId);
@@ -189,6 +190,9 @@ export async function updateProduct(db: PrismaClient, actor: StaffActor, id: str
     if (changes.length) await audit(tx, staffAudit(actor, { action: "product.updated", summary: `Changed ${before.brand.name} ${before.name}: ${changes.join(", ")}`, targetType: "Product", targetId: id, ipAddress: ip }));
     return after;
   });
+  // The category or rule may have changed which supplier it comes from.
+  await refreshCosts(db, [id]);
+  return after;
 }
 
 /**

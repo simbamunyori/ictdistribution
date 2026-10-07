@@ -4,7 +4,8 @@ import { buttonClass } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import type { browse } from "@/server/catalogue/shop";
-import { ProductCard } from "./product-card";
+import { BusinessPrompt } from "./business-prompt";
+import { ProductCard, type Where } from "./product-card";
 
 type Result = NonNullable<Awaited<ReturnType<typeof browse>>>;
 type Search = Record<string, string | string[] | undefined>;
@@ -32,7 +33,7 @@ function hrefWithout(path: string, search: Search, key: string, value: string | 
   return s ? `${path}?${s}` : path;
 }
 
-export function BrowseView({ path, search, result, compare, categoryLinks }: { path: string; search: Search; result: Result; compare: string[]; categoryLinks?: { href: string; label: string; count: number }[] }) {
+export function BrowseView({ path, search, result, compare, where, categoryLinks }: { path: string; search: Search; result: Result; compare: string[]; where: Where; categoryLinks?: { href: string; label: string; count: number }[] }) {
   const q = typeof search.q === "string" ? search.q : "";
   const back = hrefWith(path, search, {});
   const chosen = [
@@ -47,6 +48,7 @@ export function BrowseView({ path, search, result, compare, categoryLinks }: { p
   const sorts = [
     ...(result.terms.length ? [{ value: "relevance", label: "Best match" }] : []),
     { value: "newest", label: "Newest" },
+    { value: "price", label: "Lowest price" },
     { value: "name", label: "Name" },
   ];
 
@@ -182,7 +184,7 @@ export function BrowseView({ path, search, result, compare, categoryLinks }: { p
           <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {result.items.map((p) => (
               <li key={p.id} className="flex">
-                <ProductCard product={p} comparing={compare.includes(p.id)} back={back} />
+                <ProductCard product={p} comparing={compare.includes(p.id)} back={back} where={where} />
               </li>
             ))}
           </ul>
@@ -210,6 +212,7 @@ export function BrowseView({ path, search, result, compare, categoryLinks }: { p
           </nav>
         ) : null}
         {result.truncated ? <p className="mt-4 text-callout text-ink-muted">Showing the newest matches. Add a word or a filter to narrow it down.</p> : null}
+        <BusinessPrompt className="mt-8" />
       </section>
     </div>
   );

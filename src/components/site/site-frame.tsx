@@ -1,3 +1,4 @@
+import { ShoppingCart } from "lucide-react";
 import Link from "next/link";
 import { company } from "@/config/app";
 import { ThemeSwitch } from "@/components/theme/theme-switch";
@@ -9,12 +10,13 @@ import { shopCategories } from "@/server/catalogue/shop";
 import { prisma } from "@/server/db";
 import { env } from "@/server/env";
 import { currentMarket } from "@/server/markets/current";
+import { currentCartCount } from "@/server/shop/cart-cookie";
 import { currentTheme } from "@/server/theme";
 import { MarketSwitcher } from "./market-switcher";
 
 /** The header and footer every public and account page shares. Phone first. */
 export async function SiteFrame({ children, back = "/" }: { children: React.ReactNode; back?: string }) {
-  const [{ market, markets }, session, theme, categories, compare] = await Promise.all([currentMarket(), currentSession("CUSTOMER"), currentTheme(), shopCategories(prisma), compareIds()]);
+  const [{ market, markets }, session, theme, categories, compare, inCart] = await Promise.all([currentMarket(), currentSession("CUSTOMER"), currentTheme(), shopCategories(prisma), compareIds(), currentCartCount()]);
   const shop = categories.filter((c) => c.count);
   const signedIn = session?.stage === "ACTIVE";
   return (
@@ -29,6 +31,18 @@ export async function SiteFrame({ children, back = "/" }: { children: React.Reac
           </Link>
           <nav aria-label="Account" className="flex items-center gap-1 sm:gap-2">
             <MarketSwitcher current={market} markets={markets} back={back} />
+            <Link href="/cart" className={buttonClass("secondary", "sm", "relative gap-1.5")}>
+              <ShoppingCart aria-hidden className="size-4" />
+              <span className="sr-only sm:not-sr-only">Cart</span>
+              {inCart ? (
+                <span className="rounded-full bg-highlight px-1.5 text-caption font-bold text-on-highlight tabular-nums">
+                  {inCart}
+                  <span className="sr-only"> {inCart === 1 ? "item" : "items"}</span>
+                </span>
+              ) : (
+                <span className="sr-only">, empty</span>
+              )}
+            </Link>
             {signedIn ? (
               <Link href="/account" className={buttonClass("secondary", "sm")}>
                 Your account
@@ -46,6 +60,11 @@ export async function SiteFrame({ children, back = "/" }: { children: React.Reac
               <li>
                 <Link href="/products" className="block rounded-md px-2 py-1.5 font-semibold whitespace-nowrap text-ink hover:bg-surface">
                   All products
+                </Link>
+              </li>
+              <li>
+                <Link href="/specials" className="block rounded-md px-2 py-1.5 font-semibold whitespace-nowrap text-link hover:bg-surface">
+                  Specials
                 </Link>
               </li>
               {shop.map((c) => (

@@ -6,6 +6,7 @@ import { SiteFrame } from "@/components/site/site-frame";
 import { compareIds } from "@/server/catalogue/compare";
 import { browse, browseParamsFrom, shopCategories } from "@/server/catalogue/shop";
 import { prisma } from "@/server/db";
+import { shopPrices } from "@/server/shop/viewer";
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -16,7 +17,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function CategoryPage({ params, searchParams }: Props) {
   const [{ slug }, search] = await Promise.all([params, searchParams]);
-  const [result, categories, compare] = await Promise.all([browse(prisma, { ...browseParamsFrom(search), category: slug }), shopCategories(prisma), compareIds()]);
+  const prices = await shopPrices();
+  const [result, categories, compare] = await Promise.all([browse(prisma, { ...browseParamsFrom(search), category: slug }, prices), shopCategories(prisma), compareIds()]);
   if (!result?.category) notFound();
   const c = result.category;
   const top = categories.find((x) => x.id === (c.parentId ?? c.id));
@@ -43,7 +45,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
         </nav>
         <h1 className="text-title font-bold">{c.name}</h1>
         {c.description ? <p className="mt-1 mb-6 max-w-2xl text-ink-muted">{c.description}</p> : <div className="mb-6" />}
-        <BrowseView path={`/categories/${slug}`} search={search} result={result} compare={compare} categoryLinks={links} />
+        <BrowseView path={`/categories/${slug}`} search={search} result={result} compare={compare} where={{ locale: prices.market.locale, timeZone: prices.market.timeZone }} categoryLinks={links} />
       </div>
     </SiteFrame>
   );

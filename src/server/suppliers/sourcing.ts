@@ -4,6 +4,7 @@ import { chooseOffer, resolveRule, SOURCING_RULE_LABEL } from "@/lib/sourcing";
 import { audit, staffAudit } from "@/server/audit";
 import { DomainError } from "@/server/errors";
 import { asRate, currentRates, pricingSettings } from "@/server/pricing/rates";
+import { refreshCosts } from "@/server/shop/costs";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 
 /**
@@ -62,6 +63,7 @@ export async function setDefaultRule(db: PrismaClient, actor: StaffActor, rule: 
     await tx.pricingSettings.update({ where: { id: "global" }, data: { sourcingRule: rule } });
     if (before.sourcingRule !== rule) await audit(tx, staffAudit(actor, { action: "sourcing.default", summary: `Changed the default supplier rule from ${SOURCING_RULE_LABEL[before.sourcingRule]} to ${SOURCING_RULE_LABEL[rule]}`, ipAddress: ip }));
   });
+  await refreshCosts(db);
 }
 
 /** Categories with their own rule, for the sourcing page. */
