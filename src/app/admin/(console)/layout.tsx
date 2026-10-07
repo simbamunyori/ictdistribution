@@ -7,6 +7,7 @@ import { Logo } from "@/components/ui/logo";
 import { company } from "@/config/app";
 import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
+import { waitingChecks } from "@/server/accounts/verification";
 import { ordersWaiting } from "@/server/shop/orders";
 import { STAFF_ROLE_LABEL, staffCan } from "@/server/staff/access";
 import { waitingImports } from "@/server/suppliers/price-lists";
@@ -19,11 +20,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const role = session.user.staffRole;
   const canSuppliers = staffCan({ staffRole: role }, "viewSuppliers");
   const canOrders = staffCan({ staffRole: role }, "viewOrders");
-  const [held, lists, waiting, theme] = await Promise.all([prisma.exchangeRate.count({ where: { heldBack: { not: null } } }), canSuppliers ? waitingImports(prisma) : 0, canOrders ? ordersWaiting(prisma) : null, currentTheme()]);
+  const canCustomers = staffCan({ staffRole: role }, "viewCustomers");
+  const canCredit = staffCan({ staffRole: role }, "manageCredit");
+  const [held, lists, waiting, checks, applications, theme] = await Promise.all([
+    prisma.exchangeRate.count({ where: { heldBack: { not: null } } }),
+    canSuppliers ? waitingImports(prisma) : 0,
+    canOrders ? ordersWaiting(prisma) : null,
+    canCustomers && staffCan({ staffRole: role }, "verifyCustomers") ? waitingChecks(prisma) : 0,
+    canCredit ? prisma.creditApplication.count({ where: { status: "PENDING" } }) : 0,
+    currentTheme(),
+  ]);
   const items: AdminNavItem[] = [
     { href: "/admin", label: "Overview" },
     ...(canOrders ? [{ href: "/admin/orders", label: "Orders", badge: waiting ? waiting.payment + waiting.toSend || undefined : undefined }] : []),
-    ...(staffCan({ staffRole: role }, "viewCustomers") ? [{ href: "/admin/customers", label: "Customers" }] : []),
+    ...(canCustomers ? [{ href: "/admin/customers", label: "Customers", badge: checks || undefined }] : []),
+    ...(canCredit ? [{ href: "/admin/credit", label: "Credit", badge: applications || undefined }] : []),
     { href: "/admin/products", label: "Products" },
     { href: "/admin/categories", label: "Categories" },
     { href: "/admin/specials", label: "Specials" },

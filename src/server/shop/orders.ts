@@ -1,11 +1,13 @@
-import type { Fulfilment, Order, OrderStatus, PaymentMethod, Prisma, PrismaClient } from "@prisma/client";
+import type { Fulfilment, Order, OrderStatus, OrgRole, PaymentMethod, Prisma, PrismaClient } from "@prisma/client";
 import { formatMoney, parseMoney, type Money } from "@/lib/money";
 import { deliveryFee, taxIncluded } from "@/lib/shop-pricing";
 import { formatDate } from "@/lib/zoned";
+import { creditPosition, reserveCredit, type CreditPosition } from "@/server/accounts/credit";
 import { audit, staffAudit, SYSTEM_ACTOR } from "@/server/audit";
 import { hashToken, newToken } from "@/server/auth/tokens";
 import { queueEmail } from "@/server/email/outbox";
 import { DomainError } from "@/server/errors";
+import { can } from "@/server/org/access";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 import { cartLines, priceLines, subtotal, type PricedLine } from "./cart";
 import type { PriceContext } from "./prices";
@@ -16,15 +18,21 @@ import type { PriceContext } from "./prices";
  * Bank transfer is the payment method until a card gateway is live:
  * the order waits for payment (ShopSettings.payDays), Finance records the
  * money when it arrives, and unpaid orders are cancelled by a job.
+ * Businesses with credit can buy on account instead: the order goes ahead
+ * at once and is due by its terms.
  */
 
-export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = { AWAITING_PAYMENT: "Waiting for payment", PAID: "Paid", FULFILLED: "Sent or ready", CANCELLED: "Cancelled" };
-export const PAYMENT_LABEL: Record<PaymentMethod, string> = { BANK_TRANSFER: "Bank transfer", CARD: "Card" };
+export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = { AWAITING_PAYMENT: "Waiting for payment", PAID: "Paid", ON_ACCOUNT: "On account", FULFILLED: "Sent or ready", CANCELLED: "Cancelled" };
+export const PAYMENT_LABEL: Record<PaymentMethod, string> = { BANK_TRANSFER: "Bank transfer", CARD: "Card", ACCOUNT: "On account" };
+
+/** Orders waiting to be sent or made ready: paid, or bought on account. */
+export const TO_SEND: OrderStatus[] = ["PAID", "ON_ACCOUNT"];
 
 /** What the customer reads for the order's state, depending on how it reaches them. */
 export function orderStateText(o: Pick<Order, "status" | "fulfilment">): string {
   if (o.status === "FULFILLED") return o.fulfilment === "COLLECTION" ? "Ready to collect" : "Sent";
   if (o.status === "PAID") return o.fulfilment === "COLLECTION" ? "Paid, being prepared for collection" : "Paid, being prepared for delivery";
+  if (o.status === "ON_ACCOUNT") return o.fulfilment === "COLLECTION" ? "On account, being prepared for collection" : "On account, being prepared for delivery";
   return ORDER_STATUS_LABEL[o.status];
 }
 
@@ -39,12 +47,16 @@ export interface CheckoutInput {
   postalCode: string;
   collectionPointId: string;
   paymentMethod: string;
+  /** The buyer's own reference, such as a purchase order number. */
+  customerReference?: string;
   notes: string;
 }
 
 export interface Buyer {
   userId: string | null;
   organisationId: string | null;
+  /** Their role in the organisation, when buying for one. */
+  role?: OrgRole | null;
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -69,18 +81,21 @@ function checkInput(input: CheckoutInput) {
   }
   if (fulfilment === "COLLECTION" && !input.collectionPointId) fieldErrors.collectionPointId = "Choose where to collect it.";
   const paymentMethod = input.paymentMethod as PaymentMethod;
-  if (paymentMethod !== "BANK_TRANSFER" && paymentMethod !== "CARD") fieldErrors.paymentMethod = "Choose how to pay.";
+  if (paymentMethod !== "BANK_TRANSFER" && paymentMethod !== "CARD" && paymentMethod !== "ACCOUNT") fieldErrors.paymentMethod = "Choose how to pay.";
   const notes = input.notes.trim();
   if (notes.length > 500) fieldErrors.notes = "Keep it under 500 characters.";
+  const customerReference = (input.customerReference ?? "").trim();
+  if (customerReference.length > 60) fieldErrors.customerReference = "Keep it under 60 characters.";
   if (Object.keys(fieldErrors).length) throw new DomainError("invalid", "Check the highlighted fields.", undefined, fieldErrors);
-  return { email, name, phone, fulfilment, paymentMethod, notes, ...(fulfilment === "DELIVERY" ? address : { addressLine1: "", addressLine2: "", city: "", postalCode: "" }) };
+  return { email, name, phone, fulfilment, paymentMethod, notes, customerReference, ...(fulfilment === "DELIVERY" ? address : { addressLine1: "", addressLine2: "", city: "", postalCode: "" }) };
 }
 
-/** What delivery or collection a market offers, for the checkout form. */
-export async function checkoutOptions(db: Pick<PrismaClient, "market" | "collectionPoint">, marketCode: string) {
+/** What delivery, collection and payment a market (and the buyer's credit) offers, for the checkout form. */
+export async function checkoutOptions(db: Pick<PrismaClient, "market" | "collectionPoint" | "organisation" | "$queryRaw">, marketCode: string, organisationId: string | null = null) {
   const market = await db.market.findUniqueOrThrow({ where: { code: marketCode } });
   const points = await db.collectionPoint.findMany({ where: { marketCode, active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
-  return { market, points, bankTransfer: market.bankDetails.trim() !== "", card: false };
+  const account: CreditPosition | null = organisationId ? await creditPosition(db, organisationId) : null;
+  return { market, points, bankTransfer: market.bankDetails.trim() !== "", card: false, account: account?.open ? account : null };
 }
 
 export interface OrderDeps {
@@ -111,6 +126,7 @@ export function totalsFor(lines: PricedLine[], market: { currency: string; taxRa
 export async function placeOrder(db: PrismaClient, deps: OrderDeps, cartId: string, ctx: PriceContext, buyer: Buyer, input: CheckoutInput) {
   const now = deps.now ?? new Date();
   const v = checkInput(input);
+  if (buyer.organisationId && !(buyer.role && can({ role: buyer.role }, "buy"))) throw new DomainError("forbidden", "Your role in this organisation doesn't allow ordering. Ask an Owner or a Buyer.");
   const { market, points, bankTransfer } = await checkoutOptions(db, ctx.market.code);
   const items = await cartLines(db, cartId);
   if (!items.length) throw new DomainError("invalid", "Your cart is empty.");
@@ -126,12 +142,15 @@ export async function placeOrder(db: PrismaClient, deps: OrderDeps, cartId: stri
   }
   if (v.paymentMethod === "CARD") throw new DomainError("invalid", "Card payments aren't available yet. Choose bank transfer.", "paymentMethod");
   if (v.paymentMethod === "BANK_TRANSFER" && !bankTransfer) throw new DomainError("invalid", `Bank transfer isn't set up for ${market.name} yet. Contact us to order.`, "paymentMethod");
+  if (v.paymentMethod === "ACCOUNT" && !buyer.organisationId) throw new DomainError("invalid", "Buying on account is for business accounts with credit.", "paymentMethod");
   const totals = totalsFor(lines, market, v.fulfilment);
   const settings = await db.shopSettings.findUniqueOrThrow({ where: { id: "global" } });
   const token = newToken();
   const payBy = new Date(now.getTime() + settings.payDays * 24 * 60 * 60 * 1000);
 
   const order = await db.$transaction(async (tx) => {
+    const onAccount = v.paymentMethod === "ACCOUNT";
+    const termsDays = onAccount ? await reserveCredit(tx, buyer.organisationId!, totals.total.amountMinor, now) : null;
     const take = new Map<string, { units: number; name: string }>();
     for (const l of lines) if (l.special && l.specialUnits) take.set(l.special.id, { units: (take.get(l.special.id)?.units ?? 0) + l.specialUnits, name: l.special.name });
     for (const [id, t] of take) {
@@ -142,6 +161,7 @@ export async function placeOrder(db: PrismaClient, deps: OrderDeps, cartId: stri
     const created = await tx.order.create({
       data: {
         number: `${settings.orderPrefix}-${n}`,
+        status: onAccount ? "ON_ACCOUNT" : "AWAITING_PAYMENT",
         marketCode: market.code,
         currency: market.currency,
         customerType: ctx.customerType,
@@ -158,8 +178,9 @@ export async function placeOrder(db: PrismaClient, deps: OrderDeps, cartId: stri
         collectionPointId: v.fulfilment === "COLLECTION" ? input.collectionPointId : null,
         collectionText,
         paymentMethod: v.paymentMethod,
-        bankDetails: v.paymentMethod === "BANK_TRANSFER" ? market.bankDetails : "",
+        bankDetails: v.paymentMethod === "CARD" ? "" : market.bankDetails,
         notes: v.notes,
+        customerReference: v.customerReference,
         subtotalMinor: totals.subtotal.amountMinor,
         deliveryMinor: v.fulfilment === "DELIVERY" ? (totals.delivery?.amountMinor ?? 0n) : 0n,
         totalMinor: totals.total.amountMinor,
@@ -167,7 +188,7 @@ export async function placeOrder(db: PrismaClient, deps: OrderDeps, cartId: stri
         taxName: market.taxName,
         taxRateBps: market.taxRateBps,
         accessTokenHash: hashToken(token),
-        payBy: v.paymentMethod === "BANK_TRANSFER" ? payBy : null,
+        payBy: onAccount ? new Date(now.getTime() + termsDays! * 24 * 60 * 60 * 1000) : v.paymentMethod === "BANK_TRANSFER" ? payBy : null,
         lines: {
           create: lines.map((l, i) => {
             const special = l.special && l.specialUnits === l.quantity;
@@ -224,6 +245,7 @@ function orderEmailPayload(o: Order, market: { locale: string; timeZone: string 
     lines: lines ? lines.map((l) => `${l.quantity} x ${l.name}: ${l.total ? m(l.total.amountMinor) : ""}`).join("\n") : "",
     collection: o.collectionText,
     address: [o.addressLine1, o.addressLine2, o.city, o.postalCode].filter(Boolean).join(", "),
+    customerReference: o.customerReference,
   };
 }
 
@@ -271,7 +293,7 @@ export async function getOrder(db: Pick<PrismaClient, "order">, id: string) {
 }
 
 export async function ordersWaiting(db: Pick<PrismaClient, "order">) {
-  const [payment, toSend] = await Promise.all([db.order.count({ where: { status: "AWAITING_PAYMENT" } }), db.order.count({ where: { status: "PAID" } })]);
+  const [payment, toSend] = await Promise.all([db.order.count({ where: { status: "AWAITING_PAYMENT" } }), db.order.count({ where: { status: { in: TO_SEND } } })]);
   return { payment, toSend };
 }
 
@@ -313,10 +335,11 @@ export async function recordPayment(db: PrismaClient, actor: StaffActor, deps: O
     await tx.orderPayment.create({ data: { orderId, method: o.paymentMethod, amountMinor: amount, reference, receivedOn, recordedByLabel: actor.name } });
     const paid = o.payments.reduce((s, p) => s + p.amountMinor, 0n) + amount;
     const money = (n: bigint) => formatMoney({ amountMinor: n, currency: o.currency }, o.market.locale);
-    const nowPaid = o.status === "AWAITING_PAYMENT" && paid >= o.totalMinor;
+    // On account, the order goes ahead before payment; paying it only settles the balance.
+    const nowPaid = o.paidAt === null && paid >= o.totalMinor;
     if (nowPaid) {
-      await tx.order.update({ where: { id: orderId }, data: { status: "PAID", paidAt: now } });
-      await queueEmail(tx, deps.key, { to: o.email, kind: "order.paid", payload: orderEmailPayload(o, o.market) });
+      await tx.order.update({ where: { id: orderId }, data: { paidAt: now, ...(o.status === "AWAITING_PAYMENT" ? { status: "PAID" } : {}) } });
+      await queueEmail(tx, deps.key, { to: o.email, kind: o.paymentMethod === "ACCOUNT" ? "order.settled" : "order.paid", payload: orderEmailPayload(o, o.market) });
     }
     await audit(tx, staffAudit(actor, { action: "order.payment", summary: `Recorded ${money(amount)} for order ${o.number}${reference ? ` (${reference})` : ""}${nowPaid ? ", now paid" : paid < o.totalMinor ? `, ${money(o.totalMinor - paid)} still to pay` : ""}`, organisationId: o.organisationId, subjectUserId: o.userId, targetType: "Order", targetId: orderId, ipAddress: ip }));
   });
@@ -329,7 +352,7 @@ export async function fulfilOrder(db: PrismaClient, actor: StaffActor, deps: Ord
   await db.$transaction(async (tx) => {
     const o = await tx.order.findUnique({ where: { id: orderId }, include: { market: true } });
     if (!o) throw new DomainError("not-found", "No such order.");
-    if (o.status !== "PAID") throw new DomainError("conflict", o.status === "AWAITING_PAYMENT" ? "This order isn't paid yet." : "This order has already been dealt with.");
+    if (!TO_SEND.includes(o.status)) throw new DomainError("conflict", o.status === "AWAITING_PAYMENT" ? "This order isn't paid yet." : "This order has already been dealt with.");
     const text = note.trim().slice(0, 300);
     await tx.order.update({ where: { id: orderId }, data: { status: "FULFILLED", fulfilledAt: now } });
     await queueEmail(tx, deps.key, { to: o.email, kind: o.fulfilment === "COLLECTION" ? "order.ready" : "order.sent", payload: { ...orderEmailPayload(o, o.market), note: text } });

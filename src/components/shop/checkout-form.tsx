@@ -12,6 +12,10 @@ export interface CheckoutChoices {
   delivery: { fee: string; note: string } | null;
   points: { id: string; name: string; address: string; hours: string }[];
   bankTransfer: boolean;
+  /** Credit open to the buyer's business, already formatted. */
+  account: { available: string; termsDays: number } | null;
+  /** An approved business: asks for its own order reference. */
+  business: boolean;
   /** Totals, already formatted, for each way of getting the order. */
   totals: { DELIVERY: string | null; COLLECTION: string };
   taxName: string;
@@ -59,6 +63,7 @@ export function CheckoutForm({ choices, prefill }: { choices: CheckoutChoices; p
   const v = state.values ?? {};
   const [fulfilment, setFulfilment] = useState(v.fulfilment || (choices.delivery ? "DELIVERY" : "COLLECTION"));
   const [point, setPoint] = useState(v.collectionPointId || (choices.points.length === 1 ? choices.points[0].id : ""));
+  const [payment, setPayment] = useState(v.paymentMethod || (choices.account ? "ACCOUNT" : "BANK_TRANSFER"));
   const total = fulfilment === "DELIVERY" ? choices.totals.DELIVERY : choices.totals.COLLECTION;
   return (
     <form action={action} className="flex flex-col gap-8" noValidate>
@@ -93,9 +98,16 @@ export function CheckoutForm({ choices, prefill }: { choices: CheckoutChoices; p
       )}
 
       <Group legend="Payment" error={err.paymentMethod}>
-        <Choice name="paymentMethod" value="BANK_TRANSFER" checked label="Bank transfer" hint={`We email our bank details and your reference. Pay within ${choices.payDays} ${choices.payDays === 1 ? "day" : "days"}; we send or prepare the order once the money arrives.`} />
+        {choices.account ? (
+          <Choice name="paymentMethod" value="ACCOUNT" checked={payment === "ACCOUNT"} onChange={() => setPayment("ACCOUNT")} label="On account" hint={`Pay within ${choices.account.termsDays} days of ordering. We send the order without waiting for payment. Available credit: ${choices.account.available}.`} />
+        ) : null}
+        {choices.bankTransfer ? (
+          <Choice name="paymentMethod" value="BANK_TRANSFER" checked={payment === "BANK_TRANSFER"} onChange={() => setPayment("BANK_TRANSFER")} label="Bank transfer" hint={`We email our bank details and your reference. Pay within ${choices.payDays} ${choices.payDays === 1 ? "day" : "days"}; we send or prepare the order once the money arrives.`} />
+        ) : null}
         <p className="text-callout text-ink-muted">Card payments are coming soon.</p>
       </Group>
+
+      {choices.business ? <TextField id="customerReference" label="Your order reference (optional)" defaultValue={v.customerReference ?? ""} error={err.customerReference} hint="Such as your purchase order number. We show it on the order and in our emails." /> : null}
 
       <TextAreaField id="notes" label="Anything we should know (optional)" rows={3} defaultValue={v.notes ?? ""} error={err.notes} hint="Such as delivery times or directions." />
 
@@ -107,7 +119,7 @@ export function CheckoutForm({ choices, prefill }: { choices: CheckoutChoices; p
           <span className="tabular-nums">{total ?? "Choose collection"}</span>
         </p>
         <p className="text-caption text-ink-muted">Including {choices.taxName}.</p>
-        <Button type="submit" size="lg" disabled={pending || !choices.bankTransfer || !total} className="mt-2 w-full">
+        <Button type="submit" size="lg" disabled={pending || (!choices.bankTransfer && !choices.account) || !total} className="mt-2 w-full">
           {pending ? "Placing your order" : "Place order"}
         </Button>
       </div>

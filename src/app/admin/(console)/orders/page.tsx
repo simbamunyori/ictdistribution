@@ -14,8 +14,8 @@ import { staffCan } from "@/server/staff/access";
 
 export const metadata: Metadata = { title: "Orders" };
 
-const STATUSES: OrderStatus[] = ["AWAITING_PAYMENT", "PAID", "FULFILLED", "CANCELLED"];
-const ORDER_TONE = { AWAITING_PAYMENT: "warning", PAID: "highlight", FULFILLED: "positive", CANCELLED: "neutral" } as const;
+const STATUSES: OrderStatus[] = ["AWAITING_PAYMENT", "PAID", "ON_ACCOUNT", "FULFILLED", "CANCELLED"];
+const ORDER_TONE = { AWAITING_PAYMENT: "warning", PAID: "highlight", ON_ACCOUNT: "highlight", FULFILLED: "positive", CANCELLED: "neutral" } as const;
 
 export default async function Orders({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const q = await searchParams;

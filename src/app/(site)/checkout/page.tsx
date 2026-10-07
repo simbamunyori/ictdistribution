@@ -21,7 +21,7 @@ export default async function CheckoutPage() {
   const lines = cart ? await priceLines(prisma, await cartLines(prisma, cart.id), prices) : [];
   if (!lines.length || lines.some((l) => l.problem)) redirect("/cart");
   const guestCheckout = (await prisma.customerType.findUniqueOrThrow({ where: { code: "INDIVIDUAL" } })).guestCheckout;
-  const { market, points, bankTransfer } = await checkoutOptions(prisma, prices.market.code);
+  const { market, points, bankTransfer, account } = await checkoutOptions(prisma, prices.market.code, s.standing === "trade" ? (s.organisation?.id ?? null) : null);
   const money = (amountMinor: bigint) => formatMoney({ amountMinor, currency: market.currency }, market.locale);
   const delivery = totalsFor(lines, market, "DELIVERY");
   const collection = totalsFor(lines, market, "COLLECTION");
@@ -55,7 +55,7 @@ export default async function CheckoutPage() {
               </div>
             ) : !canReach ? (
               <Alert>We can&apos;t deliver or offer collection in {market.name} yet. Contact us to order.</Alert>
-            ) : !bankTransfer ? (
+            ) : !bankTransfer && !account ? (
               <Alert>Payment isn&apos;t set up for {market.name} yet. Contact us to order.</Alert>
             ) : (
               <CheckoutForm
@@ -64,6 +64,8 @@ export default async function CheckoutPage() {
                   delivery: canDeliver ? { fee: delivery.delivery!.amountMinor === 0n ? "free" : money(delivery.delivery!.amountMinor), note: market.deliveryNote } : null,
                   points: points.map((p) => ({ id: p.id, name: p.name, address: p.address, hours: p.hours })),
                   bankTransfer,
+                  account: account ? { available: money(account.available), termsDays: account.termsDays ?? 0 } : null,
+                  business: s.standing === "trade",
                   totals: { DELIVERY: canDeliver ? money(delivery.total.amountMinor) : null, COLLECTION: money(collection.total.amountMinor) },
                   taxName: market.taxName,
                   payDays: settings.payDays,

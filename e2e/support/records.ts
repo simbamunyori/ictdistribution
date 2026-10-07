@@ -4,8 +4,9 @@ import { PrismaClient } from "@prisma/client";
 /**
  * Addresses of seeded records for the pages that need an id: a demo
  * product, supplier and category, two demo price lists (one waiting
- * for its columns, one ready for review), a demo special and a demo
- * order with a known link, made here when missing.
+ * for its columns, one ready for review), a demo special, a demo
+ * order with a known link, and the demo business with a document, a credit
+ * application and a volume break at its level, made here when missing.
  * Development and CI databases only.
  */
 let cached: Promise<Record<string, string>> | null = null;
@@ -64,7 +65,19 @@ async function load(): Promise<Record<string, string>> {
         lines: { create: [{ productId: product.id, description: product.name, mpn: product.mpn, quantity: 1, unitPriceMinor: 1_000_00n, lineTotalMinor: 1_000_00n }] },
       },
     });
-    return { product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken };
+    // The demo business, with a document to check and a credit application waiting.
+    const business = await db.organisation.findFirstOrThrow({ where: { name: "Kgale Hill Systems (demo)" } });
+    if (!(await db.organisationDocument.findFirst({ where: { organisationId: business.id } }))) {
+      await db.organisationDocument.create({ data: { organisationId: business.id, kind: "REGISTRATION", filename: "registration.pdf", contentType: "application/pdf", bytes: new TextEncoder().encode("%PDF-1.4\n% browser checks\n"), size: 27, uploadedByLabel: "Browser checks" } });
+    }
+    if (!(await db.creditApplication.findFirst({ where: { organisationId: business.id, status: "PENDING" } }))) {
+      await db.creditApplication.create({ data: { organisationId: business.id, requestedLimitMinor: 80_000_00n, requestedTermsDays: 45, details: "Monthly spend about P60,000. References: Demo Traders (71 000 000), Demo Supplies (72 000 000).", appliedByLabel: "Browser checks" } });
+    }
+    // A volume break at the demo business's level, so trade product pages show one.
+    if (!(await db.volumeBreak.findFirst({ where: { customerType: business.customerType, categoryId: product.categoryId, minQuantity: 3 } }))) {
+      await db.volumeBreak.create({ data: { customerType: business.customerType, categoryId: product.categoryId, minQuantity: 3, discountBps: 300 } });
+    }
+    return { business: business.id, product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken };
   } finally {
     await db.$disconnect();
   }

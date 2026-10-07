@@ -10,8 +10,10 @@ import { buttonClass } from "@/components/ui/button";
 import { compareIds } from "@/server/catalogue/compare";
 import { shopProduct } from "@/server/catalogue/shop";
 import { prisma } from "@/server/db";
+import { TRADE_MAX_LINE } from "@/server/shop/cart";
+import { formatMoney } from "@/lib/money";
 import { shopSettings } from "@/server/shop/settings";
-import { shopPrices } from "@/server/shop/viewer";
+import { shopPrices, shopWhere } from "@/server/shop/viewer";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -28,9 +30,10 @@ export default async function ProductPage({ params }: Props) {
   const prices = await shopPrices();
   const [p, compare, settings, market] = await Promise.all([shopProduct(prisma, slug, prices), compareIds(), shopSettings(prisma), prisma.market.findUniqueOrThrow({ where: { code: prices.market.code }, select: { deliveryEnabled: true, deliveryNote: true, name: true } })]);
   if (!p) notFound();
-  const where = { locale: prices.market.locale, timeZone: prices.market.timeZone };
+  const where = await shopWhere();
   const lead = leadTimeText(p.price?.leadTimeDays ?? null);
-  const max = Math.min(settings.maxLineQuantity, p.price?.special?.perOrderLimit ?? Infinity, 20);
+  const trade = where.standing === "trade";
+  const max = trade ? TRADE_MAX_LINE : Math.min(settings.maxLineQuantity, p.price?.special?.perOrderLimit ?? Infinity, 20);
   const back = `/products/${p.slug}`;
   const [main, ...more] = p.images;
   const c = p.category;
@@ -89,14 +92,43 @@ export default async function ProductPage({ params }: Props) {
                 <>
                   <PriceTag price={p.price} locale={where.locale} timeZone={where.timeZone} taxName={prices.market.taxName} size="lg" />
                   {p.price.special?.perOrderLimit ? <p className="mt-1 text-caption text-ink-muted">Up to {p.price.special.perOrderLimit} per order at this price.</p> : null}
+                  {p.volume.length ? (
+                    <table className="mt-4 w-full max-w-xs text-callout">
+                      <caption className="mb-1 text-left font-semibold text-ink">Buy more, pay less each</caption>
+                      <thead className="sr-only">
+                        <tr>
+                          <th scope="col">Quantity</th>
+                          <th scope="col">Price each</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {p.volume.map((v) => (
+                          <tr key={v.minQuantity} className="border-t border-line">
+                            <th scope="row" className="py-1.5 text-left font-normal text-ink-body">
+                              {v.minQuantity} or more
+                            </th>
+                            <td className="py-1.5 text-right font-semibold tabular-nums">{formatMoney(v.unit, where.locale)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : null}
                   <div className="mt-4">
                     <AddToCart productId={p.id} withQuantity max={max} />
                   </div>
                 </>
-              ) : p.sellToIndividuals ? (
+              ) : p.sellToIndividuals || trade ? (
                 <>
                   <p className="font-semibold text-ink">Not available to order right now.</p>
                   <p className="mt-1 text-callout text-ink-muted">We&apos;re updating its price. Check back soon, or ask us for it.</p>
+                </>
+              ) : where.standing === "unverified" ? (
+                <>
+                  <p className="font-semibold text-ink">Trade prices show once we have checked your business.</p>
+                  <p className="mt-1 text-callout text-ink-muted">We sell this to registered businesses. Send your company details and documents, and we will check them.</p>
+                  <Link href="/account/business" className={buttonClass("primary", "md", "mt-4")}>
+                    Your business details
+                  </Link>
                 </>
               ) : (
                 <>
@@ -127,7 +159,7 @@ export default async function ProductPage({ params }: Props) {
                   </span>
                 </li>
               ) : null}
-              {p.sellToIndividuals ? (
+              {p.sellToIndividuals && where.standing === "retail" ? (
                 <li className="flex items-start gap-3">
                   <Building2 aria-hidden className="mt-0.5 size-5 shrink-0 text-link" />
                   <span>

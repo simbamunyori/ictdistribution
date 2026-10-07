@@ -25,10 +25,10 @@ export async function specialsFor(db: Pick<PrismaClient, "product" | "special" |
   const rows = ids.length
     ? await db.product.findMany({
         where: { AND: [IN_SHOP, { id: { in: ids } }, { sellToIndividuals: true }] },
-        select: { id: true, slug: true, name: true, categoryId: true, landedCostMinor: true, leadTimeDays: true, brand: { select: { name: true } }, category: { select: { parentId: true } }, media: { where: { kind: "IMAGE" }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], take: 1, select: { id: true, alt: true, width: true, height: true } } },
+        select: { id: true, slug: true, name: true, categoryId: true, sellToIndividuals: true, landedCostMinor: true, leadTimeDays: true, brand: { select: { name: true } }, category: { select: { parentId: true } }, media: { where: { kind: "IMAGE" }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], take: 1, select: { id: true, alt: true, width: true, height: true } } },
       })
     : [];
-  const priceables = new Map<string, PriceableProduct>(rows.map((r) => [r.id, { id: r.id, categoryId: r.categoryId, parentCategoryId: r.category.parentId, landedCostMinor: r.landedCostMinor, leadTimeDays: r.leadTimeDays }]));
+  const priceables = new Map<string, PriceableProduct>(rows.map((r) => [r.id, { id: r.id, sellToIndividuals: r.sellToIndividuals, categoryId: r.categoryId, parentCategoryId: r.category.parentId, landedCostMinor: r.landedCostMinor, leadTimeDays: r.leadTimeDays }]));
   const bundles: { id: string; slug: string; name: string; description: string; price: BundlePrice; items: { slug: string; name: string; brand: string; quantity: number; image: { id: string; alt: string; width: number | null; height: number | null } | null }[] }[] = [];
   for (const s of bundleSpecials) {
     const price = bundlePrice(ctx, s, priceables);

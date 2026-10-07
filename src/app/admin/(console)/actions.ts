@@ -38,6 +38,7 @@ export async function organisationTypeAction(_: ActionState, form: FormData): Pr
     return "Changed. The customer can see this in their history.";
   });
   revalidatePath("/admin/customers");
+  revalidatePath(`/admin/customers/${field(form, "organisationId")}`);
   return result;
 }
 

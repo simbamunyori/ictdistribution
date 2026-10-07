@@ -22,7 +22,7 @@ export async function addToCartAction(form: FormData) {
   const bundleId = field(form, "bundleId") || undefined;
   let back = "/cart?added=1";
   try {
-    await addToCart(prisma, cartId, { productId, bundleId }, quantity);
+    await addToCart(prisma, cartId, { productId, bundleId }, quantity, { trade: (await shopPrices()).trade });
   } catch (e) {
     if (!(e instanceof DomainError)) throw e;
     back = `/cart?problem=${encodeURIComponent(e.message)}`;
@@ -32,11 +32,11 @@ export async function addToCartAction(form: FormData) {
 
 export async function updateCartLineAction(form: FormData) {
   const cart = await currentCart();
-  if (cart) await setQuantity(prisma, cart.id, field(form, "lineId"), field(form, "remove") ? 0 : Math.max(0, Math.floor(Number(field(form, "quantity")) || 0)));
+  if (cart) await setQuantity(prisma, cart.id, field(form, "lineId"), field(form, "remove") ? 0 : Math.max(0, Math.floor(Number(field(form, "quantity")) || 0)), { trade: (await shopPrices()).trade });
   redirect(safeNext(field(form, "back"), "/cart"));
 }
 
-const CHECKOUT_FIELDS = ["email", "name", "phone", "fulfilment", "addressLine1", "addressLine2", "city", "postalCode", "collectionPointId", "paymentMethod", "notes"] as const;
+const CHECKOUT_FIELDS = ["email", "name", "phone", "fulfilment", "addressLine1", "addressLine2", "city", "postalCode", "collectionPointId", "paymentMethod", "customerReference", "notes"] as const;
 
 export async function placeOrderAction(_prev: ActionState, form: FormData): Promise<ActionState> {
   const values = Object.fromEntries(CHECKOUT_FIELDS.map((k) => [k, field(form, k)])) as Record<(typeof CHECKOUT_FIELDS)[number], string>;
@@ -50,7 +50,7 @@ export async function placeOrderAction(_prev: ActionState, form: FormData): Prom
     await check(redis(), `order:${ip}`, LIMITS.ordersPerIp);
     const [s, prices] = await Promise.all([shopper(), shopPrices()]);
     if (!s.user && !(await prisma.customerType.findUniqueOrThrow({ where: { code: "INDIVIDUAL" } })).guestCheckout) throw new DomainError("invalid", "Sign in or create an account to order.");
-    const { order, token } = await placeOrder(prisma, { key: appKey() }, cart.id, prices, { userId: s.user?.id ?? null, organisationId: s.organisation?.id ?? null }, values);
+    const { order, token } = await placeOrder(prisma, { key: appKey() }, cart.id, prices, { userId: s.user?.id ?? null, organisationId: s.organisation?.id ?? null, role: s.organisation?.role ?? null }, values);
     done = { number: order.number, token };
     await hit(redis(), `order:${ip}`, LIMITS.ordersPerIp);
     await runSoon("email-deliver").catch(() => undefined);

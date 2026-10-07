@@ -4,7 +4,7 @@ import { SiteFrame } from "@/components/site/site-frame";
 import { compareIds } from "@/server/catalogue/compare";
 import { browse, browseParamsFrom, shopCategories } from "@/server/catalogue/shop";
 import { prisma } from "@/server/db";
-import { shopPrices } from "@/server/shop/viewer";
+import { shopPrices, shopWhere } from "@/server/shop/viewer";
 
 export const metadata: Metadata = { title: "Products", description: "Laptops, phones, monitors, storage, networking, servers and software, from the brands businesses trust." };
 
@@ -16,7 +16,7 @@ export default async function Products({ searchParams }: { searchParams: Promise
     <SiteFrame back="/products">
       <div className="mx-auto max-w-6xl px-4 py-10 md:px-6">
         <h1 className="mb-6 text-title font-bold">{result?.terms.length ? "Search" : "All products"}</h1>
-        <BrowseView path="/products" search={search} result={result!} compare={compare} where={{ locale: prices.market.locale, timeZone: prices.market.timeZone }} categoryLinks={categories.filter((c) => c.count).map((c) => ({ href: `/categories/${c.slug}`, label: c.name, count: c.count }))} />
+        <BrowseView path="/products" search={search} result={result!} compare={compare} where={await shopWhere()} categoryLinks={categories.filter((c) => c.count).map((c) => ({ href: `/categories/${c.slug}`, label: c.name, count: c.count }))} />
       </div>
     </SiteFrame>
   );

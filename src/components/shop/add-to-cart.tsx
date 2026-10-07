@@ -16,13 +16,17 @@ export function AddToCart({ productId, bundleId, label = "Add to cart", withQuan
           <label htmlFor={qid} className="text-caption font-semibold text-ink-muted">
             Quantity
           </label>
-          <select id={qid} name="quantity" defaultValue="1" className={cn(inputClass, "w-20")}>
-            {Array.from({ length: Math.max(1, max) }, (_, i) => (
-              <option key={i + 1} value={i + 1}>
-                {i + 1}
-              </option>
-            ))}
-          </select>
+          {max > 20 ? (
+            <input id={qid} name="quantity" type="number" inputMode="numeric" min={1} max={max} step={1} defaultValue="1" required className={cn(inputClass, "w-28")} />
+          ) : (
+            <select id={qid} name="quantity" defaultValue="1" className={cn(inputClass, "w-20")}>
+              {Array.from({ length: Math.max(1, max) }, (_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {i + 1}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       ) : null}
       <button type="submit" aria-label={name ? `${label} ${name} to your cart` : undefined} className={buttonClass("primary", size, "gap-2")}>

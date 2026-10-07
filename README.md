@@ -78,6 +78,10 @@ The integration tests empty and reseed `TEST_DATABASE_URL` (it must end in
 | Shop browse, filters, compare | `src/server/catalogue/shop.ts` | |
 | Shop prices, specials, cart | `src/server/shop/` | /admin/specials, /admin/shop |
 | Orders and bank transfer payments | `src/server/shop/orders.ts` | /admin/orders |
+| Checking businesses | `src/server/accounts/verification.ts` | /admin/customers |
+| Category markups and volume breaks | `src/server/pricing/levels.ts` | /admin/customer-types |
+| Agreed prices per business | `src/server/pricing/customer-prices.ts` | /admin/customers |
+| Credit terms and orders on account | `src/server/accounts/credit.ts` | /admin/credit |
 | Background jobs | `src/server/jobs/boss.ts` | |
 
 Business rules (markups, buffers, rounding, rate rules, sourcing rules, who is staff) live
@@ -91,5 +95,6 @@ rollback, nightly backups and the weekly restore test. Sign-in with
 Microsoft and Google: [docs/sign-in-setup.md](docs/sign-in-setup.md).
 Exchange rates: [docs/exchange-rates.md](docs/exchange-rates.md). The
 catalogue, suppliers and price list imports: [docs/catalogue.md](docs/catalogue.md). The
-shop, specials and orders: [docs/shop.md](docs/shop.md). Choices
+shop, specials and orders: [docs/shop.md](docs/shop.md). Business
+customers, trade prices and credit: [docs/business.md](docs/business.md). Choices
 made along the way: [docs/decisions.md](docs/decisions.md).

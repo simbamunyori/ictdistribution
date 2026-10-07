@@ -80,6 +80,7 @@ model Market {
   collectionPoints CollectionPoint[]
   specials         Special[]
   orders           Order[]
+  customerPrices   CustomerPrice[]
 }
 
 /// Where customers in a market can collect an order.
@@ -162,7 +163,38 @@ model CustomerType {
   sortOrder     Int              @default(0)
   updatedAt     DateTime         @updatedAt
 
-  organisations Organisation[]
+  organisations   Organisation[]
+  categoryMarkups CategoryMarkup[]
+  volumeBreaks    VolumeBreak[]
+}
+
+/// A price level's markup for one category (and the categories under it), in place of the level's own.
+model CategoryMarkup {
+  id           String           @id @default(cuid())
+  customerType CustomerTypeCode
+  categoryId   String
+  markupBps    Int
+  updatedAt    DateTime         @updatedAt
+
+  type     CustomerType @relation(fields: [customerType], references: [code], onDelete: Cascade)
+  category Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([customerType, categoryId])
+}
+
+/// Buy at least this many of one product and pay this much less per unit. Optionally only in one category.
+model VolumeBreak {
+  id           String           @id @default(cuid())
+  customerType CustomerTypeCode
+  categoryId   String?
+  minQuantity  Int
+  discountBps  Int
+  createdAt    DateTime         @default(now())
+
+  type     CustomerType @relation(fields: [customerType], references: [code], onDelete: Cascade)
+  category Category?    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([customerType])
 }
 
 // ─── People and organisations ────────────────────────────────────────
@@ -229,23 +261,126 @@ enum OrgRole {
 /// A business customer: a company, reseller or government or enterprise
 /// buyer, with its own users.
 model Organisation {
-  id                 String           @id @default(cuid())
+  id                 String             @id @default(cuid())
   name               String
-  customerType       CustomerTypeCode @default(BUSINESS)
+  customerType       CustomerTypeCode   @default(BUSINESS)
   /// ISO 3166-1 alpha-2.
   country            String
   marketCode         String
   registrationNumber String?
   taxNumber          String?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  /// Registered address, for invoices.
+  address            String             @default("")
+  /// One per line.
+  directors          String             @default("")
+  verification       VerificationStatus @default(NOT_SUBMITTED)
+  submittedAt        DateTime?
+  verifiedAt         DateTime?
+  verifiedByLabel    String?
+  /// Why staff could not approve it, shown to the customer.
+  verificationNote   String?
+  /// Credit, set by Finance, in the organisation's market currency. Null: no credit.
+  creditLimitMinor   BigInt?
+  /// Days to pay an order bought on account.
+  creditTermsDays    Int?
+  /// Stops new orders on account, whatever the limit.
+  creditOnHold       Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  type        CustomerType @relation(fields: [customerType], references: [code], onDelete: Restrict)
-  market      Market       @relation(fields: [marketCode], references: [code], onDelete: Restrict)
-  memberships Membership[]
-  invitations Invitation[]
+  type               CustomerType           @relation(fields: [customerType], references: [code], onDelete: Restrict)
+  market             Market                 @relation(fields: [marketCode], references: [code], onDelete: Restrict)
+  memberships        Membership[]
+  invitations        Invitation[]
+  documents          OrganisationDocument[]
+  customerPrices     CustomerPrice[]
+  creditApplications CreditApplication[]
+  orders             Order[]
 
   @@index([customerType])
+  @@index([verification])
+}
+
+enum VerificationStatus {
+  NOT_SUBMITTED
+  /// Sent for checking.
+  PENDING
+  APPROVED
+  /// Sent back with a note; the customer can correct it and send again.
+  REJECTED
+}
+
+enum DocumentKind {
+  REGISTRATION
+  TAX
+  DIRECTOR_ID
+  ADDRESS
+  OTHER
+}
+
+/// A document a business sends to be checked. Kept in the database like product media; staff only.
+model OrganisationDocument {
+  id              String       @id @default(cuid())
+  organisationId  String
+  kind            DocumentKind
+  filename        String
+  contentType     String
+  bytes           Bytes
+  size            Int
+  uploadedByLabel String
+  createdAt       DateTime     @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+}
+
+/// A price agreed with one customer for one product, including tax, in that market's currency.
+model CustomerPrice {
+  id             String    @id @default(cuid())
+  organisationId String
+  productId      String
+  marketCode     String
+  priceMinor     BigInt
+  validUntil     DateTime?
+  note           String    @default("")
+  createdByLabel String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  market       Market       @relation(fields: [marketCode], references: [code], onDelete: Restrict)
+
+  @@unique([organisationId, productId, marketCode])
+}
+
+enum CreditApplicationStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  WITHDRAWN
+}
+
+model CreditApplication {
+  id                  String                  @id @default(cuid())
+  organisationId      String
+  status              CreditApplicationStatus @default(PENDING)
+  /// In the organisation's market currency.
+  requestedLimitMinor BigInt
+  requestedTermsDays  Int
+  /// Monthly spend, trade references and anything else Finance should know.
+  details             String                  @default("")
+  appliedByLabel      String
+  decidedAt           DateTime?
+  decidedByLabel      String?
+  /// Shown to the customer.
+  decisionNote        String?
+  createdAt           DateTime                @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
 }
 
 model Membership {
@@ -483,15 +618,17 @@ model Category {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  parent      Category?            @relation("subcategories", fields: [parentId], references: [id], onDelete: Restrict)
-  children    Category[]           @relation("subcategories")
-  specFields  SpecField[]
-  products    Product[]
-  suppliers   SupplierCategory[]
+  parent       Category?            @relation("subcategories", fields: [parentId], references: [id], onDelete: Restrict)
+  children     Category[]           @relation("subcategories")
+  specFields   SpecField[]
+  products     Product[]
+  suppliers    SupplierCategory[]
   /// Categories whose products we suggest alongside these, e.g. memory for laptops.
-  suggests    CategorySuggestion[] @relation("suggestFrom")
-  suggestedBy CategorySuggestion[] @relation("suggestTo")
-  specials    Special[]
+  suggests     CategorySuggestion[] @relation("suggestFrom")
+  suggestedBy  CategorySuggestion[] @relation("suggestTo")
+  specials     Special[]
+  markups      CategoryMarkup[]
+  volumeBreaks VolumeBreak[]
 
   @@index([parentId, sortOrder])
 }
@@ -593,16 +730,17 @@ model Product {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  brand      Brand            @relation(fields: [brandId], references: [id], onDelete: Restrict)
-  category   Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  media      ProductMedia[]
-  offers     SupplierOffer[]
-  links      ProductLink[]    @relation("linkFrom")
-  linkedBy   ProductLink[]    @relation("linkTo")
-  featured   FeaturedProduct?
-  specials   SpecialItem[]
-  cartLines  CartLine[]
-  orderLines OrderLine[]
+  brand          Brand            @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  category       Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  media          ProductMedia[]
+  offers         SupplierOffer[]
+  links          ProductLink[]    @relation("linkFrom")
+  linkedBy       ProductLink[]    @relation("linkTo")
+  featured       FeaturedProduct?
+  specials       SpecialItem[]
+  cartLines      CartLine[]
+  orderLines     OrderLine[]
+  customerPrices CustomerPrice[]
 
   @@unique([brandId, mpn])
   @@index([mpnKey])
@@ -1015,6 +1153,8 @@ model CartLine {
 enum OrderStatus {
   AWAITING_PAYMENT
   PAID
+  /// Bought on account: to send now, paid by its due date.
+  ON_ACCOUNT
   /// Sent, or ready to collect.
   FULFILLED
   CANCELLED
@@ -1028,6 +1168,8 @@ enum Fulfilment {
 enum PaymentMethod {
   BANK_TRANSFER
   CARD
+  /// The organisation's credit terms.
+  ACCOUNT
 }
 
 model Order {
@@ -1055,6 +1197,8 @@ model Order {
   /// What to pay into, as shown when ordered.
   bankDetails       String           @default("")
   notes             String           @default("")
+  /// The buyer's own reference, such as a purchase order number.
+  customerReference String           @default("")
   /// Lines, including tax.
   subtotalMinor     BigInt
   deliveryMinor     BigInt
@@ -1074,12 +1218,14 @@ model Order {
   updatedAt         DateTime         @updatedAt
 
   market          Market           @relation(fields: [marketCode], references: [code], onDelete: Restrict)
+  organisation    Organisation?    @relation(fields: [organisationId], references: [id], onDelete: Restrict)
   collectionPoint CollectionPoint? @relation(fields: [collectionPointId], references: [id], onDelete: SetNull)
   lines           OrderLine[]
   payments        OrderPayment[]
 
   @@index([status, createdAt])
   @@index([userId])
+  @@index([organisationId, paymentMethod])
   @@index([email])
 }
 

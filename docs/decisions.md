@@ -79,3 +79,33 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
 - **Our own stock is a supplier.** A consignment launched as a special is
   recorded as an offer from "Our stock (currency)" at its landed cost, so
   costs, margins and sourcing work the same as for any supplier.
+
+## D4
+
+- **Trade prices need an approved business.** A signed-in business buys
+  at Individual prices until staff approve its details and documents;
+  only then does its own level apply, and only then can it see and buy
+  products not sold to individuals. Withdrawing an approval switches this
+  off from the next page.
+- **Volume breaks are a percentage off, per product line.** A break
+  counts the quantity of one product in the cart, not the whole order,
+  and the best break reached applies. It does not stack with a special
+  or an agreed price, so a customer never gets two discounts on one unit.
+- **Agreed prices are fixed amounts in the market currency**, including
+  tax, not a markup. That matches how quotes and contracts are written.
+  A lower special still wins.
+- **Credit is checked inside the order's transaction.** The
+  organisation's row is locked while the balance is read, so two orders
+  placed together cannot both use the last of the limit. The balance is
+  every order on account that is not cancelled, less payments received.
+- **Orders on account can be sent before payment.** They start as "On
+  account" rather than "Awaiting payment", are not cancelled for late
+  payment, and show as overdue on the customer's credit page after their
+  due date. Reminders for overdue accounts come with statements and
+  invoices in a later milestone.
+- **Approved trade buyers can order up to 10,000 of one item.** The cart
+  limit set at `/admin/shop` still applies to everyone else.
+- **Company documents are kept in the database** next to the
+  organisation, so backups and restores include them and no file storage
+  needs setting up. Only staff can open them, and each opening is
+  audited.

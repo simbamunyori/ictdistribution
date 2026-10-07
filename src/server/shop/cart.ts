@@ -3,7 +3,7 @@ import type { Money } from "@/lib/money";
 import { hashToken, newToken } from "@/server/auth/tokens";
 import { IN_SHOP } from "@/server/catalogue/shop";
 import { DomainError } from "@/server/errors";
-import { bundlePrice, priceOf, type LoadedSpecial, type PriceableProduct, type PriceContext } from "./prices";
+import { bundlePrice, canBuy, priceOf, volumeUnit, type LoadedSpecial, type PriceableProduct, type PriceContext } from "./prices";
 
 /**
  * Carts, for guests and signed-in customers alike: a cookie holds a
@@ -28,18 +28,27 @@ export async function cartFor(db: Pick<PrismaClient, "cart">, token: string | un
   return { id: cart.id, token: fresh, created: true };
 }
 
-async function maxLine(db: Pick<PrismaClient, "shopSettings">) {
+/** The most of one item in a cart. Approved businesses buy in quantity. */
+export const TRADE_MAX_LINE = 10_000;
+
+async function maxLine(db: Pick<PrismaClient, "shopSettings">, trade: boolean) {
+  if (trade) return TRADE_MAX_LINE;
   return (await db.shopSettings.findUnique({ where: { id: "global" } }))?.maxLineQuantity ?? 10;
 }
 
+export interface Shopper {
+  /** An approved business. */
+  trade: boolean;
+}
+
 /** Adds a product or a bundle, or more of one already in the cart. */
-export async function addToCart(db: Db, cartId: string, item: { productId?: string; bundleId?: string }, quantity = 1) {
+export async function addToCart(db: Db, cartId: string, item: { productId?: string; bundleId?: string }, quantity = 1, shopper: Shopper = { trade: false }) {
   if (!Number.isInteger(quantity) || quantity < 1) throw new DomainError("invalid", "Choose how many.", "quantity");
-  const max = await maxLine(db);
+  const max = await maxLine(db, shopper.trade);
   if (item.productId) {
     const p = await db.product.findFirst({ where: { id: item.productId, ...IN_SHOP }, select: { id: true, sellToIndividuals: true } });
     if (!p) throw new DomainError("not-found", "That product isn't in the shop any more.");
-    if (!p.sellToIndividuals) throw new DomainError("invalid", "Businesses buy this one through a trade account.");
+    if (!canBuy(shopper, p)) throw new DomainError("invalid", "Businesses buy this one through a trade account.");
   } else if (item.bundleId) {
     const s = await db.special.findUnique({ where: { id: item.bundleId }, select: { kind: true } });
     if (s?.kind !== "BUNDLE") throw new DomainError("not-found", "That bundle has ended.");
@@ -54,12 +63,12 @@ export async function addToCart(db: Db, cartId: string, item: { productId?: stri
 }
 
 /** Sets a line's quantity. Zero removes it. */
-export async function setQuantity(db: Db, cartId: string, lineId: string, quantity: number) {
+export async function setQuantity(db: Db, cartId: string, lineId: string, quantity: number, shopper: Shopper = { trade: false }) {
   if (!Number.isInteger(quantity) || quantity < 0) throw new DomainError("invalid", "Enter a whole number.", "quantity");
   const line = await db.cartLine.findFirst({ where: { id: lineId, cartId } });
   if (!line) return;
   if (quantity === 0) await db.cartLine.delete({ where: { id: line.id } });
-  else await db.cartLine.update({ where: { id: line.id }, data: { quantity: Math.min(quantity, await maxLine(db)) } });
+  else await db.cartLine.update({ where: { id: line.id }, data: { quantity: Math.min(quantity, await maxLine(db, shopper.trade)) } });
 }
 
 export async function cartCount(db: Pick<PrismaClient, "cartLine">, cartId: string | undefined) {
@@ -89,6 +98,9 @@ export interface PricedLine {
   quantity: number;
   /** The usual price of one. */
   usualUnit: Money | null;
+  /** The price of one of the units not at a special price, after any volume break. */
+  volumeUnit: Money | null;
+  volumeDiscountBps: number;
   /** How many are at the special price, and that price. */
   specialUnits: number;
   specialUnit: Money | null;
@@ -117,8 +129,9 @@ const PRODUCT_SELECT = {
   media: { where: { kind: "IMAGE" as const }, orderBy: [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }], take: 1, select: { id: true, alt: true } },
 } satisfies Prisma.ProductSelect;
 
-const priceable = (p: { id: string; categoryId: string; landedCostMinor: bigint | null; leadTimeDays: number | null; category: { parentId: string | null } }): PriceableProduct => ({
+const priceable = (p: { id: string; sellToIndividuals: boolean; categoryId: string; landedCostMinor: bigint | null; leadTimeDays: number | null; category: { parentId: string | null } }): PriceableProduct => ({
   id: p.id,
+  sellToIndividuals: p.sellToIndividuals,
   categoryId: p.categoryId,
   parentCategoryId: p.category.parentId,
   landedCostMinor: p.landedCostMinor,
@@ -146,18 +159,31 @@ export async function priceLines(db: Pick<PrismaClient, "product" | "special">, 
   const m = (amountMinor: bigint): Money => ({ amountMinor, currency });
 
   return items.map((item): PricedLine => {
-    const base = { id: item.id, productId: item.productId, bundleId: item.bundleId, quantity: item.quantity, specialUnits: 0, specialUnit: null, special: null, contents: [] as { name: string; quantity: number }[] };
+    const base = { id: item.id, productId: item.productId, bundleId: item.bundleId, quantity: item.quantity, specialUnits: 0, specialUnit: null, special: null, volumeUnit: null, volumeDiscountBps: 0, contents: [] as { name: string; quantity: number }[] };
     if (item.productId) {
       const p = products.get(item.productId);
       const common = { ...base, kind: "product" as const, href: p ? `/products/${p.slug}` : null, name: p?.name ?? "A product no longer in the shop", brand: p?.brand.name ?? "", mpn: p?.mpn ?? "", image: p?.media[0] ?? null, unitCostBase: p?.landedCostMinor ?? null, leadTimeDays: p?.leadTimeDays ?? null };
-      const price = p && p.sellToIndividuals ? priceOf(ctx, priceables.get(p.id)!) : null;
-      if (!price) return { ...common, usualUnit: null, total: null, problem: p ? "Not available to order right now." : "No longer in the shop." };
+      const pp = p ? priceables.get(p.id)! : null;
+      const price = pp ? priceOf(ctx, pp) : null;
+      if (!p || !pp || !price) return { ...common, usualUnit: null, total: null, problem: !p ? "No longer in the shop." : pp && canBuy(ctx, pp) ? "Not available to order right now." : "Businesses buy this one through a trade account." };
       const usual = price.was ?? price.amount;
-      if (!price.special) return { ...common, usualUnit: usual, total: m(usual.amountMinor * BigInt(item.quantity)), problem: null };
-      const n = Math.min(item.quantity, room(price.special));
-      used.set(price.special.id, (used.get(price.special.id) ?? 0) + n);
-      const total = price.amount.amountMinor * BigInt(n) + usual.amountMinor * BigInt(item.quantity - n);
-      return { ...common, usualUnit: usual, specialUnits: n, specialUnit: n ? price.amount : null, special: n ? { id: price.special.id, name: price.special.name, endsAt: price.special.endsAt } : null, total: m(total), problem: null };
+      const n = price.special ? Math.min(item.quantity, room(price.special)) : 0;
+      if (price.special) used.set(price.special.id, (used.get(price.special.id) ?? 0) + n);
+      // Units not at the special price get the volume break for the whole line's quantity.
+      const vol = volumeUnit(ctx, pp, usual, item.quantity);
+      const rest = item.quantity - n;
+      const total = (n ? price.amount.amountMinor * BigInt(n) : 0n) + vol.unit.amountMinor * BigInt(rest);
+      return {
+        ...common,
+        usualUnit: usual,
+        volumeUnit: rest && vol.discountBps ? vol.unit : null,
+        volumeDiscountBps: rest ? vol.discountBps : 0,
+        specialUnits: n,
+        specialUnit: n ? price.amount : null,
+        special: n && price.special ? { id: price.special.id, name: price.special.name, endsAt: price.special.endsAt } : null,
+        total: m(total),
+        problem: null,
+      };
     }
     const row = bundleRows.find((b) => b.id === item.bundleId);
     const special = ctx.specials.find((s) => s.id === item.bundleId && s.kind === "BUNDLE");
