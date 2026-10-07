@@ -1,13 +1,14 @@
 import type { Prisma, PrismaClient, SpecField } from "@prisma/client";
 import { cache } from "react";
 import { formatSpec, mpnKey, searchTerms, type SpecValue, type SpecValues } from "@/lib/catalogue";
+import { priceOf, type PriceContext, type ShopPrice } from "@/server/shop/prices";
 import { specFieldsOf } from "./categories";
 
 /**
  * What the shop shows: categories, search, filters, product pages,
- * comparisons and suggestions. Reads only customer-safe columns, and
- * never supplier offers. Only ACTIVE products in visible categories
- * appear. Prices come with the shop in D3.
+ * comparisons and suggestions. Never reads supplier offers. The landed
+ * cost is read only to work out the shop price and never leaves this
+ * file. Only ACTIVE products in visible categories appear.
  */
 
 export const SHOP_PAGE_SIZE = 24;
@@ -29,8 +30,11 @@ const CARD_SELECT = {
   specs: true,
   createdAt: true,
   sellToIndividuals: true,
+  landedCostMinor: true,
+  leadTimeDays: true,
+  categoryId: true,
   brand: { select: { name: true, slug: true } },
-  category: { select: { id: true, name: true, slug: true, specFields: { where: { highlight: true }, orderBy: { sortOrder: "asc" } }, parent: { select: { specFields: { where: { highlight: true }, orderBy: { sortOrder: "asc" } } } } } },
+  category: { select: { id: true, name: true, slug: true, parentId: true, specFields: { where: { highlight: true }, orderBy: { sortOrder: "asc" } }, parent: { select: { specFields: { where: { highlight: true }, orderBy: { sortOrder: "asc" } } } } } },
   media: { where: { kind: "IMAGE" }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], take: 1, select: { id: true, alt: true, width: true, height: true } },
 } satisfies Prisma.ProductSelect;
 
@@ -48,9 +52,17 @@ export interface ProductCard {
   image: { id: string; alt: string; width: number | null; height: number | null } | null;
   /** The category's highlighted specifications, written out: "16 GB", "Intel Core i7". */
   highlights: string[];
+  /** For products sold to individuals, when it can be priced. */
+  price: ShopPrice | null;
 }
 
-function toCard(p: CardRow): ProductCard {
+/** The shop price of a product row, for products sold to individuals. */
+function priceRow(p: Pick<CardRow, "id" | "sellToIndividuals" | "landedCostMinor" | "leadTimeDays" | "categoryId"> & { category: { parentId: string | null } }, ctx?: PriceContext): ShopPrice | null {
+  if (!ctx || !p.sellToIndividuals) return null;
+  return priceOf(ctx, { id: p.id, categoryId: p.categoryId, parentCategoryId: p.category.parentId, landedCostMinor: p.landedCostMinor, leadTimeDays: p.leadTimeDays });
+}
+
+function toCard(p: CardRow, ctx?: PriceContext): ProductCard {
   const specs = p.specs as SpecValues;
   const fields = [...(p.category.parent?.specFields ?? []), ...p.category.specFields];
   return {
@@ -64,6 +76,7 @@ function toCard(p: CardRow): ProductCard {
     sellToIndividuals: p.sellToIndividuals,
     image: p.media[0] ?? null,
     highlights: fields.map((f) => formatSpec(f, specs[f.key])).filter(Boolean).slice(0, 4),
+    price: priceRow(p, ctx),
   };
 }
 
@@ -84,7 +97,7 @@ export const shopCategories = cache(async (db: Pick<PrismaClient, "category" | "
 
 // ─── Browsing and search ─────────────────────────────────────────────
 
-export type SortOrder = "relevance" | "name" | "newest";
+export type SortOrder = "relevance" | "name" | "newest" | "price";
 
 export interface BrowseParams {
   /** A category or subcategory slug. */
@@ -111,7 +124,7 @@ export interface Facet {
 /** A value as the filter compares it: numbers and yes/no as text. */
 const asText = (v: SpecValue | undefined) => (v === undefined ? undefined : typeof v === "boolean" ? (v ? "yes" : "no") : String(v));
 
-export async function browse(db: Pick<PrismaClient, "category" | "product">, params: BrowseParams) {
+export async function browse(db: Pick<PrismaClient, "category" | "product">, params: BrowseParams, ctx?: PriceContext) {
   const terms = searchTerms(params.q ?? "");
   let category: Awaited<ReturnType<typeof findShopCategory>> = null;
   if (params.category) {
@@ -188,17 +201,27 @@ export async function browse(db: Pick<PrismaClient, "category" | "product">, par
     facets.push({ field: f, options });
   }
 
-  const sort = params.sort ?? (terms.length ? "relevance" : "newest");
+  const sort = params.sort === "price" && !ctx ? "newest" : (params.sort ?? (terms.length ? "relevance" : "newest"));
   const score = (p: CardRow) => {
     const name = `${p.brand.name} ${p.name}`.toLowerCase();
     return (terms.every((t) => name.includes(t)) ? 2 : 0) + (terms.some((t) => mpnKey(t) === mpnKey(p.mpn)) ? 4 : 0);
+  };
+  // Lowest first; products without a shown price last.
+  const prices = sort === "price" ? new Map(matches.map((p) => [p.id, priceRow(p, ctx)?.amount.amountMinor ?? null])) : null;
+  const byPrice = (a: CardRow, b: CardRow) => {
+    const x = prices!.get(a.id) ?? null;
+    const y = prices!.get(b.id) ?? null;
+    if (x === null || y === null) return Number(x === null) - Number(y === null);
+    return x < y ? -1 : x > y ? 1 : 0;
   };
   const sorted =
     sort === "name"
       ? [...matches].sort((a, b) => `${a.brand.name} ${a.name}`.localeCompare(`${b.brand.name} ${b.name}`))
       : sort === "relevance"
         ? [...matches].sort((a, b) => score(b) - score(a) || b.createdAt.getTime() - a.createdAt.getTime())
-        : matches;
+        : sort === "price"
+          ? [...matches].sort(byPrice)
+          : matches;
   const pages = Math.max(1, Math.ceil(sorted.length / SHOP_PAGE_SIZE));
   const page = Math.min(Math.max(1, params.page ?? 1), pages);
   return {
@@ -209,7 +232,7 @@ export async function browse(db: Pick<PrismaClient, "category" | "product">, par
     page,
     pages,
     sort,
-    items: sorted.slice((page - 1) * SHOP_PAGE_SIZE, page * SHOP_PAGE_SIZE).map(toCard),
+    items: sorted.slice((page - 1) * SHOP_PAGE_SIZE, page * SHOP_PAGE_SIZE).map((p) => toCard(p, ctx)),
     brands: brandFacet,
     facets,
   };
@@ -251,15 +274,15 @@ export function browseParamsFrom(search: Record<string, string | string[] | unde
     brands: all("b"),
     values,
     ranges,
-    sort: sort === "name" || sort === "newest" || sort === "relevance" ? sort : undefined,
+    sort: sort === "name" || sort === "newest" || sort === "relevance" || sort === "price" ? sort : undefined,
     page: Number(all("page")[0]) || 1,
   };
 }
 
 // ─── Product page ────────────────────────────────────────────────────
 
-export async function shopProduct(db: Pick<PrismaClient, "product" | "categorySuggestion">, slug: string) {
-  const p = await db.product.findFirst({
+export async function shopProduct(db: Pick<PrismaClient, "product" | "categorySuggestion">, slug: string, ctx?: PriceContext) {
+  const found = await db.product.findFirst({
     where: { slug, ...IN_SHOP },
     select: {
       id: true,
@@ -272,6 +295,9 @@ export async function shopProduct(db: Pick<PrismaClient, "product" | "categorySu
       warrantyMonths: true,
       warrantyTerms: true,
       sellToIndividuals: true,
+      categoryId: true,
+      landedCostMinor: true,
+      leadTimeDays: true,
       brand: { select: { name: true, slug: true } },
       category: {
         select: {
@@ -288,17 +314,20 @@ export async function shopProduct(db: Pick<PrismaClient, "product" | "categorySu
       linkedBy: { where: { product: IN_SHOP }, select: { product: { select: CARD_SELECT } } },
     },
   });
-  if (!p) return null;
+  if (!found) return null;
+  // The cost stays here: only the price made from it goes on.
+  const { landedCostMinor, leadTimeDays, ...p } = found;
   const fields = specFieldsOf(p.category);
   const specs = p.specs as SpecValues;
   const linked = [...p.links.map((l) => l.related), ...p.linkedBy.map((l) => l.product)];
   return {
     ...p,
+    price: priceRow({ ...p, landedCostMinor, leadTimeDays }, ctx),
     specRows: fields.map((f) => ({ label: f.label, value: formatSpec(f, specs[f.key]) })).filter((r) => r.value),
     images: p.media.filter((m) => m.kind === "IMAGE"),
     datasheets: p.media.filter((m) => m.kind === "DATASHEET"),
-    goesWith: linked.map(toCard),
-    suggested: await suggestions(db, p, fields, new Set([p.id, ...linked.map((l) => l.id)])),
+    goesWith: linked.map((l) => toCard(l, ctx)),
+    suggested: await suggestions(db, p, fields, new Set([p.id, ...linked.map((l) => l.id)]), ctx),
   };
 }
 
@@ -307,7 +336,7 @@ export async function shopProduct(db: Pick<PrismaClient, "product" | "categorySu
  * admin area). Where both share a specification marked "must match",
  * such as the memory type, only matching products are suggested.
  */
-async function suggestions(db: Pick<PrismaClient, "product" | "categorySuggestion">, p: { category: { id: string; parentId: string | null }; specs: Prisma.JsonValue }, fields: SpecField[], exclude: Set<string>): Promise<ProductCard[]> {
+async function suggestions(db: Pick<PrismaClient, "product" | "categorySuggestion">, p: { category: { id: string; parentId: string | null }; specs: Prisma.JsonValue }, fields: SpecField[], exclude: Set<string>, ctx?: PriceContext): Promise<ProductCard[]> {
   const from = [p.category.id, ...(p.category.parentId ? [p.category.parentId] : [])];
   const related = (await db.categorySuggestion.findMany({ where: { categoryId: { in: from } }, select: { relatedId: true } })).map((r) => r.relatedId);
   if (!related.length) return [];
@@ -335,19 +364,19 @@ async function suggestions(db: Pick<PrismaClient, "product" | "categorySuggestio
     picked.push(s);
   }
   for (const s of scored) if (!picked.includes(s) && picked.length < 4) picked.push(s);
-  return picked.map((s) => toCard({ ...s.c, category: { ...s.c.category, specFields: s.c.category.specFields.filter((f) => f.highlight), parent: s.c.category.parent ? { specFields: s.c.category.parent.specFields.filter((f) => f.highlight) } : null } }));
+  return picked.map((s) => toCard({ ...s.c, category: { ...s.c.category, specFields: s.c.category.specFields.filter((f) => f.highlight), parent: s.c.category.parent ? { specFields: s.c.category.parent.specFields.filter((f) => f.highlight) } : null } }, ctx));
 }
 
 // ─── Compare ─────────────────────────────────────────────────────────
 
 /** Up to four products side by side, with a row for each specification any of them has. */
-export async function compareProducts(db: Pick<PrismaClient, "product">, ids: string[]) {
+export async function compareProducts(db: Pick<PrismaClient, "product">, ids: string[], ctx?: PriceContext) {
   const rows = await db.product.findMany({
     where: { AND: [IN_SHOP, { id: { in: ids.slice(0, 4) } }] },
     select: {
       ...CARD_SELECT,
       warrantyMonths: true,
-      category: { select: { id: true, name: true, slug: true, specFields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] }, parent: { select: { specFields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] } } } } },
+      category: { select: { id: true, name: true, slug: true, parentId: true, specFields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] }, parent: { select: { specFields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] } } } } },
     },
   });
   const products = ids.map((id) => rows.find((r) => r.id === id)).filter((r) => r !== undefined);
@@ -361,7 +390,7 @@ export async function compareProducts(db: Pick<PrismaClient, "product">, ids: st
     .filter((r) => r.values.some(Boolean));
   const highlightOnly = (p: (typeof products)[number]): CardRow => ({ ...p, category: { ...p.category, specFields: p.category.specFields.filter((f) => f.highlight), parent: p.category.parent ? { specFields: p.category.parent.specFields.filter((f) => f.highlight) } : null } });
   return {
-    products: products.map((p) => ({ ...toCard(highlightOnly(p)), warrantyMonths: p.warrantyMonths })),
+    products: products.map((p) => ({ ...toCard(highlightOnly(p), ctx), warrantyMonths: p.warrantyMonths })),
     rows: [
       { key: "brand", label: "Brand", values: products.map((p) => p.brand.name), differs: new Set(products.map((p) => p.brand.name)).size > 1 },
       { key: "category", label: "Category", values: products.map((p) => p.category.name), differs: new Set(products.map((p) => p.category.name)).size > 1 },
@@ -369,4 +398,14 @@ export async function compareProducts(db: Pick<PrismaClient, "product">, ids: st
       { key: "warranty", label: "Warranty", values: products.map((p) => (p.warrantyMonths ? `${p.warrantyMonths} months` : "")), differs: new Set(products.map((p) => p.warrantyMonths)).size > 1 },
     ],
   };
+}
+
+// ─── Cards by id ─────────────────────────────────────────────────────
+
+/** Shop cards for these products, in the order given, leaving out any not in the shop. */
+export async function cardsFor(db: Pick<PrismaClient, "product">, ids: string[], ctx?: PriceContext): Promise<ProductCard[]> {
+  if (!ids.length) return [];
+  const rows = await db.product.findMany({ where: { AND: [IN_SHOP, { id: { in: ids } }] }, select: CARD_SELECT });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return ids.flatMap((id) => (byId.has(id) ? [toCard(byId.get(id)!, ctx)] : []));
 }

@@ -1,13 +1,17 @@
-import { Building2, FileText, ShieldCheck } from "lucide-react";
+import { Building2, FileText, ShieldCheck, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AddToCart } from "@/components/shop/add-to-cart";
+import { leadTimeText, PriceTag } from "@/components/shop/price-tag";
 import { CompareToggle, ProductCard, ProductImage } from "@/components/shop/product-card";
 import { SiteFrame } from "@/components/site/site-frame";
 import { buttonClass } from "@/components/ui/button";
 import { compareIds } from "@/server/catalogue/compare";
 import { shopProduct } from "@/server/catalogue/shop";
 import { prisma } from "@/server/db";
+import { shopSettings } from "@/server/shop/settings";
+import { shopPrices } from "@/server/shop/viewer";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -21,8 +25,12 @@ const size = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} 
 
 export default async function ProductPage({ params }: Props) {
   const { slug } = await params;
-  const [p, compare] = await Promise.all([shopProduct(prisma, slug), compareIds()]);
+  const prices = await shopPrices();
+  const [p, compare, settings, market] = await Promise.all([shopProduct(prisma, slug, prices), compareIds(), shopSettings(prisma), prisma.market.findUniqueOrThrow({ where: { code: prices.market.code }, select: { deliveryEnabled: true, deliveryNote: true, name: true } })]);
   if (!p) notFound();
+  const where = { locale: prices.market.locale, timeZone: prices.market.timeZone };
+  const lead = leadTimeText(p.price?.leadTimeDays ?? null);
+  const max = Math.min(settings.maxLineQuantity, p.price?.special?.perOrderLimit ?? Infinity, 20);
   const back = `/products/${p.slug}`;
   const [main, ...more] = p.images;
   const c = p.category;
@@ -77,13 +85,18 @@ export default async function ProductPage({ params }: Props) {
             {p.summary ? <p className="mt-4 text-headline text-ink-body">{p.summary}</p> : null}
 
             <div className="mt-6 rounded-lg border border-line bg-surface p-5">
-              {p.sellToIndividuals ? (
+              {p.price ? (
                 <>
-                  <p className="font-semibold text-ink">Prices and checkout open soon.</p>
-                  <p className="mt-1 text-callout text-ink-muted">Create an account and we&apos;ll let you know when you can buy it.</p>
-                  <Link href="/sign-up" className={buttonClass("primary", "md", "mt-4")}>
-                    Create an account
-                  </Link>
+                  <PriceTag price={p.price} locale={where.locale} timeZone={where.timeZone} taxName={prices.market.taxName} size="lg" />
+                  {p.price.special?.perOrderLimit ? <p className="mt-1 text-caption text-ink-muted">Up to {p.price.special.perOrderLimit} per order at this price.</p> : null}
+                  <div className="mt-4">
+                    <AddToCart productId={p.id} withQuantity max={max} />
+                  </div>
+                </>
+              ) : p.sellToIndividuals ? (
+                <>
+                  <p className="font-semibold text-ink">Not available to order right now.</p>
+                  <p className="mt-1 text-callout text-ink-muted">We&apos;re updating its price. Check back soon, or ask us for it.</p>
                 </>
               ) : (
                 <>
@@ -100,6 +113,12 @@ export default async function ProductPage({ params }: Props) {
             </div>
 
             <ul className="mt-6 flex flex-col gap-3 text-callout">
+              {p.price && (lead || market.deliveryNote) ? (
+                <li className="flex items-start gap-3">
+                  <Truck aria-hidden className="mt-0.5 size-5 shrink-0 text-link" />
+                  <span>{[lead, market.deliveryEnabled ? market.deliveryNote : `Collect in ${market.name}.`].filter(Boolean).join(" ")}</span>
+                </li>
+              ) : null}
               {p.warrantyMonths ? (
                 <li className="flex items-start gap-3">
                   <ShieldCheck aria-hidden className="mt-0.5 size-5 shrink-0 text-link" />
@@ -186,7 +205,7 @@ export default async function ProductPage({ params }: Props) {
             <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {p.goesWith.map((x) => (
                 <li key={x.id} className="flex">
-                  <ProductCard product={x} comparing={compare.includes(x.id)} back={back} />
+                  <ProductCard product={x} comparing={compare.includes(x.id)} back={back} where={where} />
                 </li>
               ))}
             </ul>
@@ -200,7 +219,7 @@ export default async function ProductPage({ params }: Props) {
             <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {p.suggested.map((x) => (
                 <li key={x.id} className="flex">
-                  <ProductCard product={x} comparing={compare.includes(x.id)} back={back} />
+                  <ProductCard product={x} comparing={compare.includes(x.id)} back={back} where={where} />
                 </li>
               ))}
             </ul>

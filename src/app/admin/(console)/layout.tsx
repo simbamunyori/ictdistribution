@@ -7,6 +7,7 @@ import { Logo } from "@/components/ui/logo";
 import { company } from "@/config/app";
 import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
+import { ordersWaiting } from "@/server/shop/orders";
 import { STAFF_ROLE_LABEL, staffCan } from "@/server/staff/access";
 import { waitingImports } from "@/server/suppliers/price-lists";
 import { currentTheme } from "@/server/theme";
@@ -17,12 +18,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const session = await requireStaff();
   const role = session.user.staffRole;
   const canSuppliers = staffCan({ staffRole: role }, "viewSuppliers");
-  const [held, lists, theme] = await Promise.all([prisma.exchangeRate.count({ where: { heldBack: { not: null } } }), canSuppliers ? waitingImports(prisma) : 0, currentTheme()]);
+  const canOrders = staffCan({ staffRole: role }, "viewOrders");
+  const [held, lists, waiting, theme] = await Promise.all([prisma.exchangeRate.count({ where: { heldBack: { not: null } } }), canSuppliers ? waitingImports(prisma) : 0, canOrders ? ordersWaiting(prisma) : null, currentTheme()]);
   const items: AdminNavItem[] = [
     { href: "/admin", label: "Overview" },
+    ...(canOrders ? [{ href: "/admin/orders", label: "Orders", badge: waiting ? waiting.payment + waiting.toSend || undefined : undefined }] : []),
     ...(staffCan({ staffRole: role }, "viewCustomers") ? [{ href: "/admin/customers", label: "Customers" }] : []),
     { href: "/admin/products", label: "Products" },
     { href: "/admin/categories", label: "Categories" },
+    { href: "/admin/specials", label: "Specials" },
+    { href: "/admin/shop", label: "Shop" },
     ...(canSuppliers
       ? [
           { href: "/admin/suppliers", label: "Suppliers", badge: lists || undefined },

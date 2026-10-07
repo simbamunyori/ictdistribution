@@ -1,11 +1,13 @@
 import type { PrismaClient } from "@prisma/client";
 import { mpnKey, searchTextFor, slugify, type SpecValues } from "@/lib/catalogue";
 import { seedStarterCategories } from "./catalogue/starter";
-import { DEMO_EMAILS, DEMO_SUFFIX } from "./placeholders";
+import { DEMO_EMAILS, DEMO_MPN, DEMO_SUFFIX } from "./placeholders";
+import { refreshCosts } from "./shop/costs";
 
 /**
  * The starting rows every server needs: currencies, the three launch
- * markets, the four customer types and the pricing settings. Safe to run
+ * markets (with their standard VAT rates), the four customer types, and
+ * the pricing and shop settings. Safe to run
  * on every start: it only adds what is missing and never changes what
  * staff have edited since.
  *
@@ -29,10 +31,10 @@ export async function seedReferenceData(db: PrismaClient): Promise<string[]> {
   if (!(await db.market.count())) {
     await db.market.createMany({
       data: [
-        { code: "bw", name: "Botswana", country: "BW", currency: "BWP", locale: "en-BW", timeZone: "Africa/Gaborone", enabled: true, isDefault: true, sortOrder: 10, fxBufferBps: 200, roundToMinor: 100 },
-        { code: "za", name: "South Africa", country: "ZA", currency: "ZAR", locale: "en-ZA", timeZone: "Africa/Johannesburg", enabled: true, sortOrder: 20, fxBufferBps: 200, roundToMinor: 100 },
+        { code: "bw", name: "Botswana", country: "BW", currency: "BWP", locale: "en-BW", timeZone: "Africa/Gaborone", enabled: true, isDefault: true, sortOrder: 10, fxBufferBps: 200, roundToMinor: 100, taxRateBps: 1400 },
+        { code: "za", name: "South Africa", country: "ZA", currency: "ZAR", locale: "en-ZA", timeZone: "Africa/Johannesburg", enabled: true, sortOrder: 20, fxBufferBps: 200, roundToMinor: 100, taxRateBps: 1500 },
         // Zimbabwe trades in US dollars, so no conversion and no buffer; prices round to the dollar.
-        { code: "zw", name: "Zimbabwe", country: "ZW", currency: "USD", locale: "en-ZW", timeZone: "Africa/Harare", enabled: true, sortOrder: 30, fxBufferBps: 0, roundToMinor: 100 },
+        { code: "zw", name: "Zimbabwe", country: "ZW", currency: "USD", locale: "en-ZW", timeZone: "Africa/Harare", enabled: true, sortOrder: 30, fxBufferBps: 0, roundToMinor: 100, taxRateBps: 1550 },
       ],
     });
     added.push("markets bw, za, zw");
@@ -54,6 +56,10 @@ export async function seedReferenceData(db: PrismaClient): Promise<string[]> {
   if (!(await db.pricingSettings.findUnique({ where: { id: "global" } }))) {
     await db.pricingSettings.create({ data: { id: "global" } });
     added.push("pricing settings");
+  }
+  if (!(await db.shopSettings.findUnique({ where: { id: "global" } }))) {
+    await db.shopSettings.create({ data: { id: "global" } });
+    added.push("shop settings");
   }
   added.push(...(await seedStarterCategories(db)));
   return added;
@@ -87,7 +93,40 @@ export async function seedDemo(db: PrismaClient): Promise<string[]> {
     }
   }
   added.push(...(await seedDemoCatalogue(db)));
+  added.push(...(await seedDemoShop(db)));
   return added;
+}
+
+/**
+ * The shop set up for Botswana, with demo values marked "(demo)": bank
+ * details, delivery, a collection point, featured products and three
+ * specials (a product, a category and a bundle). The start-up check
+ * flags the bank details and collection point on a real server.
+ */
+async function seedDemoShop(db: PrismaClient): Promise<string[]> {
+  await refreshCosts(db);
+  if (await db.collectionPoint.count({ where: { name: { endsWith: DEMO_SUFFIX } } })) return [];
+  await db.market.update({
+    where: { code: "bw" },
+    data: { bankDetails: `First Demo Bank ${DEMO_SUFFIX}\nAccount name: ICT Distribution Africa\nAccount number: 0000000000\nBranch code: 000000`, deliveryEnabled: true, deliveryFeeMinor: 8000n, freeDeliveryMinor: 500000n, deliveryNote: "1 to 3 working days in Gaborone, 3 to 5 elsewhere." },
+  });
+  await db.collectionPoint.create({ data: { marketCode: "bw", name: `Gaborone office ${DEMO_SUFFIX}`, address: "Plot 0000, Main Mall, Gaborone", hours: "Monday to Friday, 08:00 to 17:00" } });
+  const demo = await db.product.findMany({ where: { mpnKey: { startsWith: DEMO_MPN } }, select: { id: true, mpn: true, categoryId: true } });
+  const by = (mpn: string) => demo.find((p) => p.mpn === mpn);
+  for (const [i, mpn] of ["DEMO-21M7001", "DEMO-SM-A556E", "DEMO-P2425H", "DEMO-85B12EA"].entries()) {
+    const p = by(mpn);
+    if (p) await db.featuredProduct.upsert({ where: { productId: p.id }, create: { productId: p.id, sortOrder: (i + 1) * 10 }, update: {} });
+  }
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const laptop = by("DEMO-21M7001");
+  const memory = by("DEMO-KVR56S46BS8-16");
+  const monitor = by("DEMO-P2425H");
+  const all = { startsAt: new Date(now - day), customerTypes: ["INDIVIDUAL" as const, "BUSINESS" as const, "RESELLER" as const, "GOVERNMENT" as const] };
+  if (laptop) await db.special.create({ data: { ...all, slug: "demo-thinkpad-launch", name: `ThinkPad launch price ${DEMO_SUFFIX}`, description: "Our first consignment, while stock lasts.", kind: "PRODUCT", discountBps: 1000, endsAt: new Date(now + 10 * day), quantityLimit: 12, perOrderLimit: 2, featured: true, items: { create: [{ productId: laptop.id }] } } });
+  if (monitor) await db.special.create({ data: { ...all, slug: "demo-monitor-week", name: `Monitor week ${DEMO_SUFFIX}`, description: "5% off every monitor.", kind: "CATEGORY", categoryId: monitor.categoryId, discountBps: 500, endsAt: new Date(now + 5 * day), featured: true } });
+  if (laptop && memory) await db.special.create({ data: { ...all, slug: "demo-laptop-memory-bundle", name: `ThinkPad with 16 GB more memory ${DEMO_SUFFIX}`, description: "The laptop and a second 16 GB stick, together.", kind: "BUNDLE", discountBps: 800, endsAt: new Date(now + 20 * day), quantityLimit: 5, featured: true, items: { create: [{ productId: laptop.id }, { productId: memory.id }] } } });
+  return ["demo shop for Botswana: bank details, delivery, a collection point, featured products and three specials"];
 }
 
 const DEMO_PRODUCTS: { category: string; brand: string; name: string; mpn: string; summary: string; specs: SpecValues; individuals: boolean; warranty: number; offers: [supplier: number, cost: string, lead: number | null, stock: number | null][] }[] = [

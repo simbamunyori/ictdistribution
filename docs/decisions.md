@@ -49,3 +49,33 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
 - **Landed cost is a percentage per supplier** (freight, duties and
   clearing) added to their cost before comparing suppliers, in US dollars.
   Staff set it from experience; D5 can refine it per shipment.
+
+## D3
+
+- **Shop prices include sales tax** (VAT 14% in Botswana, 15% in South
+  Africa, 15.5% in Zimbabwe as starting values) and are rounded up to the
+  market's step. Admins change the rate per market at `/admin/markets`.
+- **Everyone sees retail prices until D4.** The shop prices products
+  marked "sell to individuals" at the Individual markup for every visitor.
+  D4 adds trade prices for signed-in businesses; other products say "Sign
+  up as a business to see prices".
+- **Each product keeps its landed cost** (the chosen supplier's cost plus
+  landed cost, in US dollars) on the product row, refreshed whenever an
+  offer, supplier, rule or rate changes and hourly by a job. Shop pages
+  read that one column, never offers or suppliers, so pages stay fast and
+  supplier data cannot leak into them.
+- **Bank transfer until a card gateway is chosen.** Orders wait for
+  payment for a set number of days (3 to start, set at `/admin/shop`),
+  Finance records the money, and unpaid orders are cancelled by a job so
+  their special units go back on sale. Which gateway to use is open
+  (DPO, Peach Payments and PayFast all cover the region); the checkout
+  already has the card option in its data.
+- **Special units are taken in the database** with one conditional
+  update when the order is placed, so two buyers can never both get the
+  last unit. Cancelled orders give their units back.
+- **Order links carry a secret.** A guest's order page is
+  `/orders/<number>?t=<secret>`, sent in the confirmation email; only its
+  hash is stored. Signed-in customers see their orders without it.
+- **Our own stock is a supplier.** A consignment launched as a special is
+  recorded as an offer from "Our stock (currency)" at its landed cost, so
+  costs, margins and sourcing work the same as for any supplier.

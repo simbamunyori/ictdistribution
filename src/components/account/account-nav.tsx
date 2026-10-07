@@ -10,6 +10,7 @@ export function AccountNav({ organisation }: { organisation: boolean }) {
   const path = usePathname();
   const items = [
     { href: "/account", label: "Overview" },
+    { href: "/account/orders", label: "Orders" },
     ...(organisation ? [{ href: "/account/team", label: "Team" }] : []),
     { href: "/account/sign-in-methods", label: "Sign-in" },
   ];

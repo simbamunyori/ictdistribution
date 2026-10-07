@@ -41,30 +41,61 @@ model Currency {
 /// written, and the price conversion rules. Edited in /admin/markets.
 model Market {
   /// "bw", "za", "zw". Lower-case ISO 3166-1 alpha-2 of the country.
-  code         String   @id
-  name         String
+  code              String   @id
+  name              String
   /// ISO 3166-1 alpha-2, upper case.
-  country      String   @unique
-  currency     String
+  country           String   @unique
+  currency          String
   /// BCP 47, for writing money and dates, e.g. "en-BW".
-  locale       String
-  timeZone     String
-  enabled      Boolean  @default(false)
+  locale            String
+  timeZone          String
+  enabled           Boolean  @default(false)
   /// Where visitors go when their country isn't one of ours. Exactly one.
-  isDefault    Boolean  @default(false)
-  sortOrder    Int      @default(0)
+  isDefault         Boolean  @default(false)
+  sortOrder         Int      @default(0)
   /// Basis points added to the exchange rate when converting our base
   /// prices, to cover the rate moving before we pay. 200 is 2%.
-  fxBufferBps  Int      @default(200)
+  fxBufferBps       Int      @default(200)
   /// Converted prices are rounded up to a multiple of this many minor
   /// units. 100 in BWP rounds up to the next whole pula; 0 or 1 leaves them.
-  roundToMinor Int      @default(100)
-  supportEmail String?
-  updatedAt    DateTime @updatedAt
+  roundToMinor      Int      @default(100)
+  supportEmail      String?
+  /// The sales tax in shop prices, e.g. "VAT". Shop prices include it.
+  taxName           String   @default("VAT")
+  /// 1,400 is 14%.
+  taxRateBps        Int      @default(0)
+  /// Delivery to an address: the fee in the market's currency, free from an order total.
+  deliveryEnabled   Boolean  @default(false)
+  deliveryFeeMinor  BigInt   @default(0)
+  freeDeliveryMinor BigInt?
+  /// What customers can expect, e.g. "2 to 4 working days in Gaborone".
+  deliveryNote      String   @default("")
+  /// Shown with every bank transfer order. Empty switches bank transfer off here.
+  bankDetails       String   @default("")
+  updatedAt         DateTime @updatedAt
 
-  currencyRef   Currency       @relation(fields: [currency], references: [code], onDelete: Restrict)
-  organisations Organisation[]
-  users         User[]
+  currencyRef      Currency          @relation(fields: [currency], references: [code], onDelete: Restrict)
+  organisations    Organisation[]
+  users            User[]
+  collectionPoints CollectionPoint[]
+  specials         Special[]
+  orders           Order[]
+}
+
+/// Where customers in a market can collect an order.
+model CollectionPoint {
+  id         String  @id @default(cuid())
+  marketCode String
+  name       String
+  address    String
+  hours      String  @default("")
+  active     Boolean @default(true)
+  sortOrder  Int     @default(0)
+
+  market Market  @relation(fields: [marketCode], references: [code], onDelete: Cascade)
+  orders Order[]
+
+  @@index([marketCode])
 }
 
 /// Settings that apply to every market. One row, id "global".
@@ -460,6 +491,7 @@ model Category {
   /// Categories whose products we suggest alongside these, e.g. memory for laptops.
   suggests    CategorySuggestion[] @relation("suggestFrom")
   suggestedBy CategorySuggestion[] @relation("suggestTo")
+  specials    Special[]
 
   @@index([parentId, sortOrder])
 }
@@ -553,15 +585,24 @@ model Product {
   sourcingRule      SourcingRule?
   /// Name, brand, part number, category and specification values, lower-cased, for search.
   searchText        String        @default("")
+  /// Internal: the chosen supplier's landed cost in the base currency and
+  /// lead time, kept current by refreshCosts. Null when no offer can be used.
+  landedCostMinor   BigInt?
+  leadTimeDays      Int?
+  costRefreshedAt   DateTime?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  brand    Brand           @relation(fields: [brandId], references: [id], onDelete: Restrict)
-  category Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  media    ProductMedia[]
-  offers   SupplierOffer[]
-  links    ProductLink[]   @relation("linkFrom")
-  linkedBy ProductLink[]   @relation("linkTo")
+  brand      Brand            @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  category   Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  media      ProductMedia[]
+  offers     SupplierOffer[]
+  links      ProductLink[]    @relation("linkFrom")
+  linkedBy   ProductLink[]    @relation("linkTo")
+  featured   FeaturedProduct?
+  specials   SpecialItem[]
+  cartLines  CartLine[]
+  orderLines OrderLine[]
 
   @@unique([brandId, mpn])
   @@index([mpnKey])
@@ -856,4 +897,232 @@ model PriceListRow {
   import PriceListImport @relation(fields: [importId], references: [id], onDelete: Cascade)
 
   @@index([importId, change, line])
+}
+
+// ─── D3: shop, specials, cart and orders ─────────────────────────────
+
+/// Shop-wide settings. One row, id "global". Edited at /admin/shop.
+model ShopSettings {
+  id              String   @id @default("global")
+  heroTitle       String   @default("ICT for work and home, delivered across Southern Africa")
+  heroText        String   @default("Laptops, phones, monitors and the rest, at clear prices. Businesses get trade pricing and quotes.")
+  /// Days a bank transfer order waits for payment before it is cancelled.
+  payDays         Int      @default(3)
+  /// The most of one item in one order.
+  maxLineQuantity Int      @default(10)
+  orderPrefix     String   @default("ICT")
+  updatedAt       DateTime @updatedAt
+}
+
+/// Products on the shop's home page, in order.
+model FeaturedProduct {
+  productId String   @id
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+enum SpecialKind {
+  /// One product at a special price.
+  PRODUCT
+  /// A percentage off everything in a category.
+  CATEGORY
+  /// Several products together at one price.
+  BUNDLE
+}
+
+/// A special offer with dates, an optional limit and the customer types it is for.
+model Special {
+  id            String             @id @default(cuid())
+  slug          String             @unique
+  name          String
+  description   String             @default("")
+  kind          SpecialKind
+  /// For CATEGORY specials. Includes its subcategories.
+  categoryId    String?
+  /// A percentage off, in basis points. 1,500 is 15%. Either this or priceMinor.
+  discountBps   Int?
+  /// A fixed price including tax, in the market's currency. Needs a market.
+  priceMinor    BigInt?
+  /// Only in this market. Null: every market.
+  marketCode    String?
+  startsAt      DateTime
+  endsAt        DateTime
+  /// Units (or bundles) it covers in total. Null: no limit.
+  quantityLimit Int?
+  /// Units (or bundles) taken by orders that weren't cancelled.
+  quantityUsed  Int                @default(0)
+  /// The most one order may take at this price.
+  perOrderLimit Int?
+  customerTypes CustomerTypeCode[]
+  /// Shown on the shop's home page.
+  featured      Boolean            @default(false)
+  /// Switched off by staff, whatever the dates.
+  active        Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  category  Category?     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  market    Market?       @relation(fields: [marketCode], references: [code], onDelete: Cascade)
+  items     SpecialItem[]
+  cartLines CartLine[]
+
+  @@index([active, endsAt])
+}
+
+/// The product of a PRODUCT special, or each product of a BUNDLE.
+model SpecialItem {
+  specialId String
+  productId String
+  quantity  Int    @default(1)
+
+  special Special @relation(fields: [specialId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([specialId, productId])
+  @@index([productId])
+}
+
+/// A shopping cart, found by the hash of the token in its cookie.
+model Cart {
+  id        String     @id @default(cuid())
+  tokenHash String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  lines     CartLine[]
+
+  @@index([updatedAt])
+}
+
+/// A product, or a bundle special, in a cart.
+model CartLine {
+  id        String   @id @default(cuid())
+  cartId    String
+  productId String?
+  bundleId  String?
+  quantity  Int
+  addedAt   DateTime @default(now())
+
+  cart    Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  bundle  Special? @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@unique([cartId, bundleId])
+}
+
+enum OrderStatus {
+  AWAITING_PAYMENT
+  PAID
+  /// Sent, or ready to collect.
+  FULFILLED
+  CANCELLED
+}
+
+enum Fulfilment {
+  DELIVERY
+  COLLECTION
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CARD
+}
+
+model Order {
+  id                String           @id @default(cuid())
+  /// e.g. ICT-100042. Shown to the customer and used as the payment reference.
+  number            String           @unique
+  status            OrderStatus      @default(AWAITING_PAYMENT)
+  marketCode        String
+  currency          String
+  customerType      CustomerTypeCode
+  userId            String?
+  organisationId    String?
+  email             String
+  name              String
+  phone             String
+  fulfilment        Fulfilment
+  addressLine1      String           @default("")
+  addressLine2      String           @default("")
+  city              String           @default("")
+  postalCode        String           @default("")
+  collectionPointId String?
+  /// The collection point's name, address and hours when ordered.
+  collectionText    String           @default("")
+  paymentMethod     PaymentMethod
+  /// What to pay into, as shown when ordered.
+  bankDetails       String           @default("")
+  notes             String           @default("")
+  /// Lines, including tax.
+  subtotalMinor     BigInt
+  deliveryMinor     BigInt
+  totalMinor        BigInt
+  /// The tax included in the total.
+  taxMinor          BigInt
+  taxName           String
+  taxRateBps        Int
+  /// The secret in the link we email, for guests to see their order.
+  accessTokenHash   String           @unique
+  payBy             DateTime?
+  paidAt            DateTime?
+  fulfilledAt       DateTime?
+  cancelledAt       DateTime?
+  cancelReason      String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  market          Market           @relation(fields: [marketCode], references: [code], onDelete: Restrict)
+  collectionPoint CollectionPoint? @relation(fields: [collectionPointId], references: [id], onDelete: SetNull)
+  lines           OrderLine[]
+  payments        OrderPayment[]
+
+  @@index([status, createdAt])
+  @@index([userId])
+  @@index([email])
+}
+
+model OrderLine {
+  id                 String  @id @default(cuid())
+  orderId            String
+  productId          String?
+  /// For bundle lines, the special.
+  bundleId           String?
+  description        String
+  mpn                String  @default("")
+  quantity           Int
+  /// Including tax, in the order's currency.
+  unitPriceMinor     BigInt
+  /// The usual price when a special applied.
+  listUnitPriceMinor BigInt?
+  lineTotalMinor     BigInt
+  specialId          String?
+  specialName        String?
+  /// How many of the quantity were at the special price.
+  specialUnits       Int     @default(0)
+  /// Internal: landed cost per unit in the base currency when ordered, for margins.
+  unitCostBaseMinor  BigInt?
+  sortOrder          Int     @default(0)
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}
+
+/// Money received for an order, recorded by Finance (or by a card gateway later).
+model OrderPayment {
+  id              String        @id @default(cuid())
+  orderId         String
+  method          PaymentMethod
+  amountMinor     BigInt
+  reference       String        @default("")
+  receivedOn      DateTime
+  recordedByLabel String
+  createdAt       DateTime      @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
 }

@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 
 /**
  * Addresses of seeded records for the pages that need an id: a demo
- * product, supplier and category, and two demo price lists (one waiting
- * for its columns, one ready for review), made here when missing.
+ * product, supplier and category, two demo price lists (one waiting
+ * for its columns, one ready for review), a demo special and a demo
+ * order with a known link, made here when missing.
  * Development and CI databases only.
  */
 let cached: Promise<Record<string, string>> | null = null;
@@ -34,7 +36,35 @@ async function load(): Promise<Record<string, string>> {
         ],
       });
     }
-    return { product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id };
+    const special = await db.special.findFirstOrThrow({ where: { slug: { startsWith: "demo-" } }, orderBy: { createdAt: "asc" } });
+    const orderToken = "browser-checks-order";
+    let order = await db.order.findUnique({ where: { number: "ICT-TEST-1" } });
+    order ??= await db.order.create({
+      data: {
+        number: "ICT-TEST-1",
+        marketCode: "bw",
+        currency: "BWP",
+        customerType: "INDIVIDUAL",
+        email: "guest@example.co.bw",
+        name: "Thato Guest",
+        phone: "+26771234567",
+        fulfilment: "DELIVERY",
+        addressLine1: "Plot 123, Kgale View",
+        city: "Gaborone",
+        paymentMethod: "BANK_TRANSFER",
+        bankDetails: "Demo Bank (demo)\nAccount 000000000",
+        subtotalMinor: 1_000_00n,
+        deliveryMinor: 80_00n,
+        totalMinor: 1_080_00n,
+        taxMinor: 132_63n,
+        taxName: "VAT",
+        taxRateBps: 1400,
+        accessTokenHash: createHash("sha256").update(orderToken).digest("hex"),
+        payBy: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+        lines: { create: [{ productId: product.id, description: product.name, mpn: product.mpn, quantity: 1, unitPriceMinor: 1_000_00n, lineTotalMinor: 1_000_00n }] },
+      },
+    });
+    return { product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken };
   } finally {
     await db.$disconnect();
   }

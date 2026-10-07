@@ -29,7 +29,10 @@ const JOBS: Job[] = [
     run: async () => {
       if (env().RATE_SOURCE === "off") return;
       const { OpenErApiSource, refreshRates } = await import("@/server/pricing/rates");
-      return refreshRates(prisma, new OpenErApiSource());
+      const { refreshCosts } = await import("@/server/shop/costs");
+      const result = await refreshRates(prisma, new OpenErApiSource());
+      await refreshCosts(prisma);
+      return result;
     },
   },
   {
@@ -42,13 +45,32 @@ const JOBS: Job[] = [
     },
   },
   {
-    // Spent sign-in codes and ended sessions, a week on.
+    // Landed costs behind shop prices. Changes to offers and rules refresh their products at once; this catches the rest.
+    name: "product-costs",
+    cron: "20 * * * *",
+    run: async () => {
+      const { refreshCosts } = await import("@/server/shop/costs");
+      return refreshCosts(prisma);
+    },
+  },
+  {
+    // Bank transfer orders not paid in time are cancelled, so their special units go back on sale.
+    name: "unpaid-orders",
+    cron: "*/15 * * * *",
+    run: async () => {
+      const { cancelUnpaid } = await import("@/server/shop/orders");
+      return cancelUnpaid(prisma, { key: appKey() });
+    },
+  },
+  {
+    // Spent sign-in codes and ended sessions, a week on. Carts untouched for 60 days.
     name: "sign-in-cleanup",
     cron: "40 3 * * *",
     run: async () => {
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       await prisma.emailCode.deleteMany({ where: { createdAt: { lt: weekAgo } } });
       await prisma.session.deleteMany({ where: { OR: [{ expiresAt: { lt: weekAgo } }, { revokedAt: { lt: weekAgo } }] } });
+      await prisma.cart.deleteMany({ where: { updatedAt: { lt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000) } } });
     },
   },
 ];
