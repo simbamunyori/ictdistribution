@@ -18,20 +18,23 @@ const jakarta = localFont({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  metadataBase: new URL(env().APP_URL),
-  title: { default: `${company.name}: laptops, phones, networking and more`, template: `%s · ${company.name}` },
-  description: `${company.tagline} Laptops, phones, networking, servers and software for homes and businesses across Southern Africa.`,
-  applicationName: company.name,
-  icons: {
-    icon: [
-      { url: "/brand/icons/favicon.svg", type: "image/svg+xml" },
-      { url: "/brand/icons/favicon.ico", sizes: "any" },
-    ],
-    apple: "/brand/icons/apple-touch-icon.png",
-  },
-  manifest: "/manifest.webmanifest",
-};
+/** Read per request, so the image builds without settings and APP_URL comes from the server. */
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    metadataBase: new URL(env().APP_URL),
+    title: { default: `${company.name}: laptops, phones, networking and more`, template: `%s · ${company.name}` },
+    description: `${company.tagline} Laptops, phones, networking, servers and software for homes and businesses across Southern Africa.`,
+    applicationName: company.name,
+    icons: {
+      icon: [
+        { url: "/brand/icons/favicon.svg", type: "image/svg+xml" },
+        { url: "/brand/icons/favicon.ico", sizes: "any" },
+      ],
+      apple: "/brand/icons/apple-touch-icon.png",
+    },
+    manifest: "/manifest.webmanifest",
+  };
+}
 
 /** The browser bar matches the page: the chosen theme, or the device's. */
 export async function generateViewport(): Promise<Viewport> {
