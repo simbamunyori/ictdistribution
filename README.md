@@ -82,6 +82,8 @@ The integration tests empty and reseed `TEST_DATABASE_URL` (it must end in
 | Category markups and volume breaks | `src/server/pricing/levels.ts` | /admin/customer-types |
 | Agreed prices per business | `src/server/pricing/customer-prices.ts` | /admin/customers |
 | Credit terms and orders on account | `src/server/accounts/credit.ts` | /admin/credit |
+| Quotes: intake, pricing, supplier requests, PDF | `src/server/quotes/` | /admin/quotes |
+| Quote prices and automation rules (pure) | `src/lib/quote-pricing.ts` | /admin/quotes/rules |
 | Background jobs | `src/server/jobs/boss.ts` | |
 
 Business rules (markups, buffers, rounding, rate rules, sourcing rules, who is staff) live

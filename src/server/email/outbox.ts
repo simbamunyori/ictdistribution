@@ -55,7 +55,7 @@ export async function deliverDue(db: PrismaClient, adapter: EmailAdapter, settin
         continue;
       }
       const { text, html } = renderEmail(rendered.body, settings.appUrl, settings.legalName);
-      await adapter.send({ to: row.toAddress, subject: rendered.subject, text, html });
+      await adapter.send({ to: row.toAddress, subject: rendered.subject, text, html, ...(rendered.replyTo ? { replyTo: rendered.replyTo } : {}) });
       // The subject of a code email carries the code: keep only the kind of email it was.
       await db.outboundEmail.update({ where: { id: row.id }, data: { status: "SENT", sentAt: now, subject: sealed ? row.kind : rendered.subject, lastError: null, payload: plain } });
       sent++;

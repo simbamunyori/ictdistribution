@@ -7,6 +7,7 @@ export interface EmailMessage {
   subject: string;
   text: string;
   html: string;
+  replyTo?: string;
 }
 
 /** Anything that can deliver an email: SMTP now, an email API later. */
@@ -34,7 +35,7 @@ export class SmtpEmailAdapter implements EmailAdapter {
  */
 export class LogEmailAdapter implements EmailAdapter {
   async send(message: EmailMessage) {
-    console.info(`\n-- Email (not sent: SMTP_URL is not set) --\nTo: ${message.to}\nSubject: ${message.subject}\n\n${message.text}\n`);
+    console.info(`\n-- Email (not sent: SMTP_URL is not set) --\nTo: ${message.to}${message.replyTo ? `\nReply-To: ${message.replyTo}` : ""}\nSubject: ${message.subject}\n\n${message.text}\n`);
   }
 }
 
