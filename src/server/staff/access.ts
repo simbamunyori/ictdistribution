@@ -39,6 +39,11 @@ export const STAFF_PERMISSIONS = {
   viewPurchaseOrders: "See purchase orders to suppliers and their papers",
   managePurchaseOrders: "Approve, send, change and cancel purchase orders",
   manageProcurementRules: "Change the rules for sending purchase orders automatically",
+  viewLogistics: "See shipments, freight estimates, duty rules, stock and deliveries",
+  manageShipments: "Record shipments and their costs, track them and set freight figures",
+  manageLogisticsRules: "Change duty rules and how freight is estimated",
+  manageStock: "Add warehouses, receive and count stock",
+  manageDeliveries: "Prepare deliveries, dispatch them and record proof of delivery",
   manageStaff: "Invite staff, change their role and deactivate them",
   viewAudit: "Read the full audit log",
 } as const;
@@ -71,6 +76,11 @@ const ALLOWED: Record<StaffPermission, StaffRole[]> = {
   viewPurchaseOrders: ["ADMIN", "SALES", "PROCUREMENT", "LOGISTICS", "FINANCE"],
   managePurchaseOrders: ["ADMIN", "PROCUREMENT"],
   manageProcurementRules: ["ADMIN"],
+  viewLogistics: ["ADMIN", "SALES", "PROCUREMENT", "LOGISTICS", "FINANCE"],
+  manageShipments: ["ADMIN", "PROCUREMENT", "LOGISTICS"],
+  manageLogisticsRules: ["ADMIN"],
+  manageStock: ["ADMIN", "LOGISTICS"],
+  manageDeliveries: ["ADMIN", "SALES", "LOGISTICS"],
   manageStaff: ["ADMIN"],
   viewAudit: ["ADMIN", "FINANCE"],
 };

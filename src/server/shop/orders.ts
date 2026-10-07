@@ -9,6 +9,8 @@ import { queueEmail } from "@/server/email/outbox";
 import { DomainError } from "@/server/errors";
 import { can } from "@/server/org/access";
 import { cancelUnsentFor } from "@/server/procurement/purchase-orders";
+import { advanceLines } from "@/server/logistics/tracking";
+import { issueForDelivery, releaseForOrder } from "@/server/logistics/stock";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 import { cartLines, priceLines, subtotal, type PricedLine } from "./cart";
 import type { PriceContext } from "./prices";
@@ -474,6 +476,10 @@ export async function fulfilOrder(db: PrismaClient, actor: StaffActor, deps: Ord
     if (!TO_SEND.includes(o.status)) throw new DomainError("conflict", o.status === "AWAITING_PAYMENT" ? "This order isn't paid yet." : "This order has already been dealt with.");
     const text = note.trim().slice(0, 300);
     await tx.order.update({ where: { id: orderId }, data: { status: "FULFILLED", fulfilledAt: now } });
+    // Whatever is still kept in stock for it leaves with it.
+    const lines = await tx.orderLine.findMany({ where: { orderId }, select: { id: true, quantity: true } });
+    await issueForDelivery(tx, lines.map((l) => ({ orderLineId: l.id, quantity: l.quantity, remaining: l.quantity })), actor.name);
+    if (o.fulfilment === "DELIVERY") await advanceLines(tx, lines.map((l) => l.id), "OUT_FOR_DELIVERY", actor.name, text, now);
     await queueEmail(tx, deps.key, { to: o.email, kind: o.fulfilment === "COLLECTION" ? "order.ready" : "order.sent", payload: { ...orderEmailPayload(o, o.market), note: text } });
     await audit(tx, staffAudit(actor, { action: "order.fulfilled", summary: `Marked order ${o.number} as ${o.fulfilment === "COLLECTION" ? "ready to collect" : "sent"}${text ? `: ${text}` : ""}`, organisationId: o.organisationId, subjectUserId: o.userId, targetType: "Order", targetId: orderId, ipAddress: ip }));
   });
@@ -490,6 +496,7 @@ export async function cancelOrder(db: PrismaClient, actor: StaffActor | null, de
     if (o.status === "CANCELLED" || o.status === "FULFILLED") throw new DomainError("conflict", "This order can't be cancelled now.");
     await tx.order.update({ where: { id: orderId }, data: { status: "CANCELLED", cancelledAt: now, cancelReason: why } });
     await releaseSpecials(tx, orderId);
+    await releaseForOrder(tx, orderId, actor?.name ?? "System");
     const withSuppliers = await cancelUnsentFor(tx, orderId, now);
     const refund = o.payments.length > 0;
     await queueEmail(tx, deps.key, { to: o.email, kind: "order.cancelled", payload: { ...orderEmailPayload(o, o.market), reason: why, refund: refund ? "yes" : "" } });

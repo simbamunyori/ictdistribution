@@ -75,7 +75,7 @@ export default async function CategoryPage({ params, searchParams }: { params: P
         <CategoryForm
           readOnly={!canEdit}
           parents={parents}
-          category={{ id: category.id, name: category.name, slug: category.slug, description: category.description, parentId: category.parentId ?? "", sortOrder: String(category.sortOrder), active: category.active, sourcingRule: category.sourcingRule ?? "" }}
+          category={{ id: category.id, name: category.name, slug: category.slug, description: category.description, parentId: category.parentId ?? "", sortOrder: String(category.sortOrder), active: category.active, sourcingRule: category.sourcingRule ?? "", hsCode: category.hsCode }}
         />
       </Card>
 

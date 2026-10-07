@@ -11,6 +11,7 @@ import { seal } from "@/server/auth/secret-box";
 import { hashToken, newToken } from "@/server/auth/tokens";
 import { queueEmail } from "@/server/email/outbox";
 import { DomainError } from "@/server/errors";
+import { landedAdder, landedContext, type LandedContext } from "@/server/logistics/landed";
 import { asRate, currentRates, pricingSettings } from "@/server/pricing/rates";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 import { DAY, HOUR, lineRef, quoteSettings, staffWhen, type QuoteDeps } from "./common";
@@ -29,7 +30,7 @@ type Tx = Prisma.TransactionClient;
 const CATEGORY_RULES = { select: { id: true, parentId: true, sourcingRule: true, parent: { select: { sourcingRule: true } } } } as const;
 
 const LINE_INCLUDE = {
-  product: { select: { id: true, sourcingRule: true, category: CATEGORY_RULES, offers: { include: { supplier: true } } } },
+  product: { select: { id: true, sourcingRule: true, weightGrams: true, lengthMm: true, widthMm: true, heightMm: true, categoryId: true, category: CATEGORY_RULES, offers: { include: { supplier: true } } } },
   category: CATEGORY_RULES,
   responses: { include: { request: { include: { supplier: true } } } },
 } satisfies Prisma.QuoteLineInclude;
@@ -59,11 +60,13 @@ function responseOffer(r: PricingLine["responses"][number], quantity: number, to
 }
 
 /** The best supplier for a line by its rule, from catalogue offers and suppliers' answers together. */
-function bestCost(line: PricingLine, globalRule: Parameters<typeof resolveRule>[0], base: string, rate: (c: string) => ReturnType<typeof asRate>, today: Date) {
+function bestCost(line: PricingLine, globalRule: Parameters<typeof resolveRule>[0], base: string, rate: (c: string) => ReturnType<typeof asRate>, today: Date, logistics: LandedContext) {
   const cat = line.product?.category ?? line.category;
   const rule = resolveRule(line.product?.sourcingRule, cat?.sourcingRule, cat?.parent?.sourcingRule, globalRule);
   const offers: (OfferForChoice & { responseId?: string })[] = [...(line.product?.offers ?? []), ...line.responses.map((r) => responseOffer(r, line.quantity, today))];
-  const chosen = chooseOffer(offers, rule, base, rate).chosen;
+  // Freight and duty need the product's weight; lines without a product use the supplier's allowance.
+  const adder = line.product ? landedAdder<OfferForChoice & { responseId?: string }>(logistics, { ...line.product, parentCategoryId: line.product.category.parentId }) : undefined;
+  const chosen = chooseOffer(offers, rule, base, rate, adder).chosen;
   if (!chosen?.landed) return null;
   return { source: chosen.offer.responseId ? ("SUPPLIER" as const) : ("CATALOGUE" as const), supplierId: chosen.offer.supplier.id, cost: chosen.landed.amountMinor, lead: chosen.leadTimeDays };
 }
@@ -98,13 +101,14 @@ async function askSuppliers(tx: Tx, deps: QuoteDeps, quote: { id: string; number
   const [settings, pricing] = await Promise.all([quoteSettings(tx), pricingSettings(tx)]);
   const rates = await currentRates(tx, pricing.baseCurrency);
   const rate = (c: string) => asRate(rates.get(c));
+  const logistics = await landedContext(tx);
   const open = await tx.supplierPriceRequest.findMany({ where: { quoteId: quote.id, status: { in: ["SENT", "TO_SEND_BY_HAND"] } }, select: { supplierId: true, lineIds: true } });
   const asked = new Set(open.flatMap((r) => r.lineIds.map((l) => `${r.supplierId}:${l}`)));
   const bySupplier = new Map<string, { supplier: Supplier; lines: PricingLine[] }>();
   for (const line of lines) {
     if (onlyLineIds && !onlyLineIds.includes(line.id)) continue;
     if (line.flagReason || line.costSource === "STAFF" || line.priceOverride !== null) continue;
-    if (!onlyLineIds && bestCost(line, pricing.sourcingRule, pricing.baseCurrency, rate, now)) continue;
+    if (!onlyLineIds && bestCost(line, pricing.sourcingRule, pricing.baseCurrency, rate, now, logistics)) continue;
     for (const s of await suppliersFor(tx, line)) {
       if (asked.has(`${s.id}:${line.id}`) || line.responses.some((r) => r.request.supplierId === s.id)) continue;
       const entry = bySupplier.get(s.id) ?? { supplier: s, lines: [] };
@@ -192,7 +196,7 @@ export async function priceQuote(db: PrismaClient, deps: QuoteDeps, quoteId: str
     if (!PRICEABLE.includes(q.status)) return q.status;
     const [settings, pricing] = await Promise.all([quoteSettings(tx), pricingSettings(tx)]);
     const base = pricing.baseCurrency;
-    const rates = await currentRates(tx, base);
+    const [rates, logistics] = await Promise.all([currentRates(tx, base), landedContext(tx)]);
     const rate = (c: string) => asRate(rates.get(c));
     const marketRate = q.currency === base ? null : rate(q.currency);
     const convertible = q.currency === base || marketRate !== null;
@@ -220,7 +224,7 @@ export async function priceQuote(db: PrismaClient, deps: QuoteDeps, quoteId: str
       let supplierId = line.supplierId;
       let leadTimeDays = line.leadTimeDays;
       if (costSource !== "STAFF") {
-        const best = bestCost(line, pricing.sourcingRule, base, rate, today);
+        const best = bestCost(line, pricing.sourcingRule, base, rate, today, logistics);
         cost = best?.cost ?? null;
         costSource = best?.source ?? null;
         supplierId = best?.supplierId ?? null;

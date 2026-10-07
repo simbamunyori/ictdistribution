@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { dropShipAction } from "@/app/admin/(console)/logistics-actions";
 import { approvePoAction, receivedPoAction, sentByHandPoAction, staffConfirmPoAction, staffPoDocumentAction, staffShipPoAction } from "@/app/admin/(console)/procurement-actions";
 import { CancelPoForm } from "@/components/admin/procurement-forms";
 import { PoConfirmForm, PoDocumentForm, PoShipForm } from "@/components/procurement/po-forms";
@@ -17,7 +18,7 @@ import { DomainError } from "@/server/errors";
 import { pricingSettings } from "@/server/pricing/rates";
 import { DOCUMENT_KIND_LABEL, PO_STATUS_LABEL, PO_STATUS_TONE, WITH_SUPPLIER } from "@/server/procurement/common";
 import { getPurchaseOrder, poLink, poWhatsappLink } from "@/server/procurement/purchase-orders";
-import { poFormGiven, poFormLines, supplierCanChange } from "@/server/procurement/supplier";
+import { poFormGiven, poFormLines, poTerms, supplierCanChange } from "@/server/procurement/supplier";
 import { staffWhen } from "@/server/quotes/common";
 import { appKey } from "@/server/secrets";
 import { staffCan } from "@/server/staff/access";
@@ -41,6 +42,9 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
   const appUrl = env().APP_URL;
   const whatsapp = po.status === "TO_SEND_BY_HAND" ? poWhatsappLink(po, po.supplier, po.lines, appKey(), appUrl) : null;
   const hidden = { poId: po.id };
+  const terms = await poTerms(prisma, po.id);
+  const shipment = po.shipmentId ? await prisma.shipment.findUnique({ where: { id: po.shipmentId }, select: { id: true, number: true } }) : null;
+  const unsent = po.status === "AWAITING_APPROVAL" || po.status === "TO_SEND_BY_HAND";
   const lines = poFormLines(po);
   const given = poFormGiven(po);
   const history = [
@@ -117,6 +121,26 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
             ) : null}
           </Card>
         ) : null}
+
+        <Card>
+          <h2 className="text-headline font-bold">Delivery</h2>
+          <p className="mt-2 text-callout">{po.dropShip ? "The supplier delivers straight to the customer, who they then know about." : "The supplier delivers to our warehouse."}</p>
+          {terms.deliverTo ? <p className="mt-2 rounded-md bg-surface p-3 text-callout whitespace-pre-line">{terms.deliverTo}</p> : null}
+          {shipment ? (
+            <p className="mt-2 text-callout">
+              Travelling in{" "}
+              <Link href={`/admin/logistics/shipments/${shipment.id}`} className="text-link underline underline-offset-4">
+                shipment {shipment.number}
+              </Link>
+              .
+            </p>
+          ) : null}
+          {canManage && unsent ? (
+            <div className="mt-4">
+              <ActionForm action={dropShipAction} hidden={{ ...hidden, dropShip: po.dropShip ? "no" : "yes" }} label={po.dropShip ? "Deliver to our warehouse instead" : "Deliver straight to the customer instead"} size="md" />
+            </div>
+          ) : null}
+        </Card>
 
         <Card>
           <div className="flex flex-wrap items-end justify-between gap-3">

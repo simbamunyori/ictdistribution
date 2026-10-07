@@ -24,7 +24,7 @@ export function Field({ id, label, hint, error, children, className }: FieldProp
       </label>
       {children(noteId, Boolean(error))}
       {error ? (
-        <p id={noteId} className="text-callout text-negative">
+        <p id={noteId} className="text-callout whitespace-pre-line text-negative">
           {error}
         </p>
       ) : hint ? (

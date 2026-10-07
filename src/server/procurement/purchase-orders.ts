@@ -8,6 +8,8 @@ import { open, seal } from "@/server/auth/secret-box";
 import { hashToken, newToken } from "@/server/auth/tokens";
 import { queueEmail } from "@/server/email/outbox";
 import { DomainError } from "@/server/errors";
+import { advanceLines, poLineIds } from "@/server/logistics/tracking";
+import { allocateFromStock, defaultWarehouse, receiveIntoStock } from "@/server/logistics/stock";
 import { asRate, currentRates, pricingSettings } from "@/server/pricing/rates";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 import { productSourcing } from "@/server/suppliers/sourcing";
@@ -30,6 +32,8 @@ export interface PoDeps {
 
 interface PlannedLine {
   orderLineId: string;
+  /** The product bought, when it is one of ours. */
+  productId: string | null;
   description: string;
   mpn: string;
   quantity: number;
@@ -62,17 +66,17 @@ async function plan(db: PrismaClient, order: OrderForPlan) {
   };
   for (const l of order.lines) {
     if (l.supplierId && l.supplierCostMinor !== null && l.supplierCurrency) {
-      add(l.supplierId, l.supplierCurrency, { orderLineId: l.id, description: l.description, mpn: l.mpn, quantity: l.quantity, unitCostMinor: l.supplierCostMinor });
+      add(l.supplierId, l.supplierCurrency, { orderLineId: l.id, productId: l.productId, description: l.description, mpn: l.mpn, quantity: l.quantity, unitCostMinor: l.supplierCostMinor });
     } else if (l.productId) {
       const offer = await sourced(l.productId);
-      if (offer) add(offer.supplier.id, offer.currency, { orderLineId: l.id, description: l.description, mpn: l.mpn, quantity: l.quantity, unitCostMinor: offer.costMinor });
+      if (offer) add(offer.supplier.id, offer.currency, { orderLineId: l.id, productId: l.productId, description: l.description, mpn: l.mpn, quantity: l.quantity, unitCostMinor: offer.costMinor });
       else unassigned.push(l.description);
     } else if (l.bundleId) {
       const items = await db.specialItem.findMany({ where: { specialId: l.bundleId }, include: { product: { select: { id: true, name: true, mpn: true, brand: { select: { name: true } } } } } });
       for (const item of items) {
         const offer = await sourced(item.productId);
         const description = `${item.product.brand.name} ${item.product.name}`;
-        if (offer) add(offer.supplier.id, offer.currency, { orderLineId: l.id, description, mpn: item.product.mpn, quantity: l.quantity * item.quantity, unitCostMinor: offer.costMinor });
+        if (offer) add(offer.supplier.id, offer.currency, { orderLineId: l.id, productId: item.productId, description, mpn: item.product.mpn, quantity: l.quantity * item.quantity, unitCostMinor: offer.costMinor });
         else unassigned.push(description);
       }
       if (!items.length) unassigned.push(l.description);
@@ -84,6 +88,20 @@ async function plan(db: PrismaClient, order: OrderForPlan) {
 const PO_EMAIL_INCLUDE = { supplier: true, lines: { orderBy: { position: "asc" } } } satisfies Prisma.PurchaseOrderInclude;
 type PoForEmail = Prisma.PurchaseOrderGetPayload<{ include: typeof PO_EMAIL_INCLUDE }>;
 
+/**
+ * Where the supplier delivers: the customer, for a drop-ship purchase
+ * order; else the warehouse it is bought into; else the address in the
+ * purchase order rules.
+ */
+export async function deliverToFor(db: Pick<PrismaClient, "order" | "warehouse"> | Prisma.TransactionClient, po: { dropShip: boolean; warehouseId: string | null; orderId: string }, fallback: string) {
+  if (po.dropShip) {
+    const o = await db.order.findUnique({ where: { id: po.orderId }, select: { name: true, phone: true, addressLine1: true, addressLine2: true, city: true, postalCode: true, market: { select: { name: true } } } });
+    if (o) return [`${o.name}, ${o.phone}`, o.addressLine1, o.addressLine2, [o.city, o.postalCode].filter(Boolean).join(" "), o.market.name].filter(Boolean).join("\n");
+  }
+  const w = po.warehouseId ? await db.warehouse.findUnique({ where: { id: po.warehouseId }, select: { name: true, address: true } }) : null;
+  return w?.address ? `${w.name}\n${w.address}` : fallback;
+}
+
 /** Sends it by email, or readies it for staff to send on WhatsApp. */
 async function dispatch(tx: Prisma.TransactionClient, deps: PoDeps, po: PoForEmail, now: Date, approvedBy: string | null) {
   const settings = await procurementSettings(tx);
@@ -91,12 +109,13 @@ async function dispatch(tx: Prisma.TransactionClient, deps: PoDeps, po: PoForEma
   const byEmail = po.channel === "EMAIL" && Boolean(po.supplier.email);
   const status: PurchaseOrderStatus = byEmail ? "SENT" : "TO_SEND_BY_HAND";
   await tx.purchaseOrder.update({ where: { id: po.id }, data: { status, sentAt: byEmail ? now : null, approvedByLabel: approvedBy, reviewReasons: approvedBy ? po.reviewReasons : null } });
+  if (byEmail) await advanceLines(tx, await poLineIds(tx, [po.id]), "ORDERED", approvedBy ?? "System", "Purchase order sent", now);
   if (byEmail) {
     const money = (n: bigint) => formatMoney({ amountMinor: n, currency: po.currency }, company.staffLocale);
     await queueEmail(tx, deps.key, {
       to: po.supplier.email!,
       kind: "supplier.po",
-      payload: { number: po.number, supplier: po.supplier.name, total: money(po.totalMinor), lines: po.lines.map((l) => `${l.quantity} x ${l.description}${l.mpn ? ` (${l.mpn})` : ""} at ${money(l.unitCostMinor)}`).join("\n"), deliverTo: settings.deliverTo, paymentTerms: settings.paymentTerms, replyTo: deps.replyTo ?? "" },
+      payload: { number: po.number, supplier: po.supplier.name, total: money(po.totalMinor), lines: po.lines.map((l) => `${l.quantity} x ${l.description}${l.mpn ? ` (${l.mpn})` : ""} at ${money(l.unitCostMinor)}`).join("\n"), deliverTo: await deliverToFor(tx, po, settings.deliverTo), paymentTerms: settings.paymentTerms, replyTo: deps.replyTo ?? "" },
       secret: { token },
     });
   }
@@ -113,7 +132,8 @@ export async function startProcurement(db: PrismaClient, deps: PoDeps, orderId: 
   const order = await db.order.findUnique({ where: { id: orderId }, include: { lines: { orderBy: { sortOrder: "asc" } } } });
   if (!order || order.procuredAt || !["PAID", "ON_ACCOUNT", "FULFILLED"].includes(order.status)) return [];
   const { groups, unassigned } = await plan(db, order);
-  const [settings, pricing] = await Promise.all([procurementSettings(db), pricingSettings(db)]);
+  const [settings, pricing, warehouse] = await Promise.all([procurementSettings(db), pricingSettings(db), defaultWarehouse(db)]);
+  const dropShip = settings.dropShipByDefault && order.fulfilment === "DELIVERY";
   const rates = await currentRates(db, pricing.baseCurrency);
   const suppliers = new Map((await db.supplier.findMany({ where: { id: { in: groups.map((g) => g.supplierId) } } })).map((s) => [s.id, s]));
   const maxValueText = formatMoney({ amountMinor: settings.maxAutoValueMinor, currency: pricing.baseCurrency }, company.staffLocale);
@@ -123,7 +143,22 @@ export async function startProcurement(db: PrismaClient, deps: PoDeps, orderId: 
     const claimed = await tx.order.updateMany({ where: { id: orderId, procuredAt: null }, data: { procuredAt: now } });
     if (!claimed.count) return [];
     const made: { number: string; status: PurchaseOrderStatus }[] = [];
-    for (const g of groups) {
+    // Lines we have free stock for are kept from it rather than bought. Bundles are always bought.
+    const fromStock = new Set<string>();
+    if (settings.useStock && warehouse) {
+      for (const l of order.lines) {
+        if (!l.productId || l.bundleId) continue;
+        if (await allocateFromStock(tx, warehouse.id, l.productId, l.id, l.quantity, "System")) fromStock.add(l.id);
+      }
+      if (fromStock.size) {
+        await tx.orderLine.updateMany({ where: { id: { in: [...fromStock] } }, data: { fromStock: true } });
+        await advanceLines(tx, [...fromStock], "IN_WAREHOUSE", "System", "Taken from our stock", now);
+        await audit(tx, { ...SYSTEM_ACTOR, action: "stock.allocated", summary: `Kept ${fromStock.size} ${fromStock.size === 1 ? "line" : "lines"} of order ${order.number} from stock in ${warehouse.code}`, targetType: "Order", targetId: orderId });
+      }
+    }
+    for (const group of groups) {
+      const g = { ...group, lines: group.lines.filter((l) => !fromStock.has(l.orderLineId)) };
+      if (!g.lines.length) continue;
       const supplier = suppliers.get(g.supplierId)!;
       const total = g.lines.reduce((s, l) => s + l.unitCostMinor * BigInt(l.quantity), 0n);
       const rate = g.currency === pricing.baseCurrency ? null : asRate(rates.get(g.currency));
@@ -144,13 +179,15 @@ export async function startProcurement(db: PrismaClient, deps: PoDeps, orderId: 
           reviewReasons: reasons.length ? reasons.join("\n") : null,
           tokenHash: hashToken(token),
           tokenSealed: seal(token, deps.key),
+          dropShip,
+          warehouseId: dropShip ? null : (warehouse?.id ?? null),
           lines: { create: g.lines.map((l, i) => ({ ...l, position: i + 1, lineTotalMinor: l.unitCostMinor * BigInt(l.quantity) })) },
         },
         include: PO_EMAIL_INCLUDE,
       });
       const status = reasons.length ? "AWAITING_APPROVAL" : await dispatch(tx, deps, po, now, null);
       made.push({ number: po.number, status });
-      await audit(tx, { ...SYSTEM_ACTOR, action: "po.created", summary: `Made purchase order ${po.number} to ${supplier.name} for ${formatMoney({ amountMinor: total, currency: g.currency }, company.staffLocale)}, for order ${order.number}${status === "SENT" ? ", sent by itself" : status === "TO_SEND_BY_HAND" ? ", to send on WhatsApp" : ", waiting for approval"}`, targetType: "PurchaseOrder", targetId: po.id });
+      await audit(tx, { ...SYSTEM_ACTOR, action: "po.created", summary: `Made ${dropShip ? "drop-ship " : ""}purchase order ${po.number} to ${supplier.name} for ${formatMoney({ amountMinor: total, currency: g.currency }, company.staffLocale)}, for order ${order.number}${status === "SENT" ? ", sent by itself" : status === "TO_SEND_BY_HAND" ? ", to send on WhatsApp" : ", waiting for approval"}`, targetType: "PurchaseOrder", targetId: po.id });
     }
     const waiting = made.filter((m) => m.status !== "SENT");
     if (waiting.length || unassigned.length) {
@@ -198,6 +235,7 @@ export async function markPoSentByHand(db: PrismaClient, actor: StaffActor, deps
     const po = await locked(tx, id);
     if (po.status !== "TO_SEND_BY_HAND") throw new DomainError("conflict", "This purchase order has already been sent.");
     await tx.purchaseOrder.update({ where: { id }, data: { status: "SENT", sentAt: now } });
+    await advanceLines(tx, await poLineIds(tx, [id]), "ORDERED", actor.name, "Purchase order sent", now);
     await audit(tx, staffAudit(actor, { action: "po.sent-by-hand", summary: `Sent purchase order ${po.number} to ${po.supplier.name} on WhatsApp`, targetType: "PurchaseOrder", targetId: id, ipAddress: ip }));
   });
 }
@@ -217,6 +255,39 @@ export async function cancelPurchaseOrder(db: PrismaClient, actor: StaffActor, d
   });
 }
 
+/** Before it goes to the supplier, staff choose whether they deliver straight to the customer. */
+export async function setPoDropShip(db: PrismaClient, actor: StaffActor, id: string, dropShip: boolean, ip?: string | null) {
+  assertStaffCan(actor, "managePurchaseOrders");
+  await db.$transaction(async (tx) => {
+    const po = await locked(tx, id);
+    if (po.status !== "AWAITING_APPROVAL" && po.status !== "TO_SEND_BY_HAND") throw new DomainError("conflict", "The supplier already has this purchase order. Agree a change with them directly.");
+    if (po.dropShip === dropShip) return;
+    const order = await tx.order.findUniqueOrThrow({ where: { id: po.orderId }, select: { fulfilment: true } });
+    if (dropShip && order.fulfilment !== "DELIVERY") throw new DomainError("conflict", "The customer collects this order, so it can't be delivered to them.");
+    const warehouse = dropShip ? null : await defaultWarehouse(tx);
+    await tx.purchaseOrder.update({ where: { id }, data: { dropShip, warehouseId: warehouse?.id ?? null } });
+    await audit(tx, staffAudit(actor, { action: "po.drop-ship", summary: dropShip ? `Purchase order ${po.number} will be delivered by ${po.supplier.name} straight to the customer` : `Purchase order ${po.number} will be delivered to our warehouse`, targetType: "PurchaseOrder", targetId: id, ipAddress: ip }));
+  });
+}
+
+/**
+ * The goods reached us: into the warehouse and kept for their order
+ * lines, or, for a drop-ship purchase order, with the customer. Returns
+ * where they went, for the audit.
+ */
+export async function receivePo(tx: Prisma.TransactionClient, po: { id: string; dropShip: boolean; warehouseId: string | null; lines: { productId: string | null; orderLineId: string | null; quantity: number; confirmedQuantity: number | null }[] }, byLabel: string, now: Date) {
+  await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: "RECEIVED", receivedAt: now } });
+  const lineIds = await poLineIds(tx, [po.id]);
+  if (po.dropShip) {
+    await advanceLines(tx, lineIds, "DELIVERED", byLabel, "Delivered by the supplier", now);
+    return ", delivered by the supplier to the customer";
+  }
+  const warehouse = (po.warehouseId ? await tx.warehouse.findUnique({ where: { id: po.warehouseId } }) : null) ?? (await defaultWarehouse(tx));
+  if (warehouse) await receiveIntoStock(tx, warehouse.id, po.id, po.lines.map((l) => ({ productId: l.productId, orderLineId: l.orderLineId, quantity: l.confirmedQuantity ?? l.quantity })), byLabel);
+  await advanceLines(tx, lineIds, "IN_WAREHOUSE", byLabel, "", now);
+  return warehouse ? ` into ${warehouse.code}` : "";
+}
+
 /** The goods are in our hands. */
 export async function markPoReceived(db: PrismaClient, actor: StaffActor, deps: PoDeps, id: string, ip?: string | null) {
   assertStaffCan(actor, "managePurchaseOrders");
@@ -224,8 +295,8 @@ export async function markPoReceived(db: PrismaClient, actor: StaffActor, deps: 
   await db.$transaction(async (tx) => {
     const po = await locked(tx, id);
     if (!WITH_SUPPLIER.includes(po.status)) throw new DomainError("conflict", "Only a purchase order with the supplier can be received.");
-    await tx.purchaseOrder.update({ where: { id }, data: { status: "RECEIVED", receivedAt: now } });
-    await audit(tx, staffAudit(actor, { action: "po.received", summary: `Received the goods for purchase order ${po.number} from ${po.supplier.name}`, targetType: "PurchaseOrder", targetId: id, ipAddress: ip }));
+    const where = await receivePo(tx, po, actor.name, now);
+    await audit(tx, staffAudit(actor, { action: "po.received", summary: `Received the goods for purchase order ${po.number} from ${po.supplier.name}${where}`, targetType: "PurchaseOrder", targetId: id, ipAddress: ip }));
   });
 }
 

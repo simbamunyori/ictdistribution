@@ -48,7 +48,7 @@ export default async function Categories() {
       {canEdit ? (
         <Card className="max-w-3xl">
           <h2 className="mb-4 text-headline font-bold">Add a category</h2>
-          <CategoryForm readOnly={false} parents={parents} category={{ name: "", slug: "", description: "", parentId: "", sortOrder: String((tree.length + 1) * 10), active: true, sourcingRule: "" }} />
+          <CategoryForm readOnly={false} parents={parents} category={{ name: "", slug: "", description: "", parentId: "", sortOrder: String((tree.length + 1) * 10), active: true, sourcingRule: "", hsCode: "" }} />
         </Card>
       ) : null}
     </>

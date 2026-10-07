@@ -1,13 +1,30 @@
 import type { Order, OrderLine, OrderPayment } from "@prisma/client";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/card";
+import { TRACKING_LABEL } from "@/lib/freight";
 import { formatMoney } from "@/lib/money";
 import { formatDate, formatDateTime } from "@/lib/zoned";
+import { DELIVERY_STATUS_LABEL, DELIVERY_STATUS_TONE } from "@/server/logistics/deliveries";
+import type { OrderLogistics } from "@/server/logistics/tracking";
 import { orderStateText, PAYMENT_LABEL } from "@/server/shop/orders";
 
 export type ViewableOrder = Order & { lines: OrderLine[]; payments: OrderPayment[]; market: { locale: string; timeZone: string; name: string } };
 
-/** An order as the customer sees it: never costs or suppliers. */
-export function OrderView({ order: o, staff = false, proFormaHref }: { order: ViewableOrder; staff?: boolean; proFormaHref?: string }) {
+const items = (n: number) => `${n} ${n === 1 ? "item" : "items"}`;
+
+/** Links to a delivery's papers, made by the page for whoever is looking. */
+export interface DeliveryLinks {
+  note: (number: string) => string;
+  pod: (number: string) => string;
+  commercialInvoice?: string;
+}
+
+/**
+ * An order as the customer sees it: never costs or suppliers. With
+ * `logistics`, each line shows where it is and the deliveries are listed;
+ * staff also see who moved each step and why.
+ */
+export function OrderView({ order: o, staff = false, proFormaHref, logistics, links }: { order: ViewableOrder; staff?: boolean; proFormaHref?: string; logistics?: OrderLogistics; links?: DeliveryLinks }) {
   const { locale, timeZone } = o.market;
   const money = (amountMinor: bigint) => formatMoney({ amountMinor, currency: o.currency }, locale);
   const paid = o.payments.reduce((s, p) => s + p.amountMinor, 0n);
@@ -84,6 +101,11 @@ export function OrderView({ order: o, staff = false, proFormaHref }: { order: Vi
                     <span className="font-semibold">{l.description}</span>
                     {l.mpn ? <span className="block text-caption text-ink-muted">Part {l.mpn}</span> : null}
                     {l.specialName ? <span className="block text-caption font-semibold text-link">{l.specialName}</span> : null}
+                    {logistics && l.tracking ? (
+                      <span className="mt-1 block">
+                        <Badge tone={l.tracking === "DELIVERED" ? "positive" : "highlight"}>{TRACKING_LABEL[l.tracking]}</Badge>
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums">{l.quantity}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{money(l.lineTotalMinor)}</td>
@@ -140,6 +162,70 @@ export function OrderView({ order: o, staff = false, proFormaHref }: { order: Vi
           </table>
         </div>
       </section>
+
+      {logistics && (logistics.events.size || logistics.deliveries.length) ? (
+        <section aria-labelledby="where" className="rounded-lg border border-line bg-raised p-5">
+          <h2 id="where" className="text-headline font-bold">
+            Where it is
+          </h2>
+          <ul className="mt-3 flex flex-col gap-3">
+            {o.lines
+              .filter((l) => logistics.events.has(l.id))
+              .map((l) => (
+                <li key={l.id}>
+                  <details>
+                    <summary className="cursor-pointer text-callout">
+                      <span className="font-semibold">{l.description}</span>: {l.tracking ? TRACKING_LABEL[l.tracking] : "Not started"}
+                    </summary>
+                    <ol className="mt-2 ml-5 flex list-decimal flex-col gap-1 text-callout">
+                      {logistics.events.get(l.id)!.map((e) => (
+                        <li key={e.id}>
+                          {TRACKING_LABEL[e.status]}, {formatDateTime(e.at, locale, timeZone)}
+                          {staff ? <span className="text-ink-muted">{`, ${e.byLabel}${e.note ? `: ${e.note}` : ""}`}</span> : null}
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                </li>
+              ))}
+          </ul>
+          {logistics.deliveries.length ? (
+            <>
+              <h3 className="mt-5 font-bold">Deliveries</h3>
+              <ul className="mt-2 flex flex-col gap-2 text-callout">
+                {logistics.deliveries.map((d) => (
+                  <li key={d.id} className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">{d.number}</span>
+                    <Badge tone={DELIVERY_STATUS_TONE[d.status]}>{DELIVERY_STATUS_LABEL[d.status]}</Badge>
+                    <span className="text-ink-muted">
+                      {[items(d.lines.reduce((n, x) => n + x.quantity, 0)), d.carrier && `with ${d.carrier}`, d.reference && `tracking ${d.reference}`, d.dispatchedAt && `left ${formatDate(d.dispatchedAt, locale, timeZone)}`, d.deliveredAt && `signed for by ${d.receivedBy} on ${formatDate(d.deliveredAt, locale, timeZone)}`].filter(Boolean).join(", ")}
+                    </span>
+                    {links ? (
+                      <>
+                        <a href={links.note(d.number)} className="text-link underline underline-offset-4">
+                          Delivery note
+                        </a>
+                        {d.podFilename ? (
+                          <a href={links.pod(d.number)} className="text-link underline underline-offset-4">
+                            Proof of delivery
+                          </a>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {links?.commercialInvoice ? (
+            <p className="mt-4 text-callout">
+              <a href={links.commercialInvoice} className="text-link underline underline-offset-4">
+                Commercial invoice for customs (PDF)
+              </a>
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <section aria-labelledby="getting" className="rounded-lg border border-line bg-raised p-5">

@@ -1,15 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { cancelDeliveryAction, deliveredAction, dispatchDeliveryAction, lineTrackingAction, prepareDeliveryAction } from "@/app/admin/(console)/logistics-actions";
 import { CancelOrderForm, FulfilForm, PaymentForm } from "@/components/admin/shop-forms";
+import { SpecForm } from "@/components/admin/spec-form";
 import { OrderView } from "@/components/shop/order-view";
+import { ActionForm } from "@/components/ui/action-form";
 import { Alert } from "@/components/ui/alert";
 import { Badge, Card, PageHeader, TableWrap, td, th } from "@/components/ui/card";
+import { inputClass } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
+import { TRACKING_LABEL, TRACKING_ORDER } from "@/lib/freight";
 import { formatMoney, toPlainAmount } from "@/lib/money";
 import { formatDate, formatDateTime } from "@/lib/zoned";
 import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
+import { DELIVERY_STATUS_LABEL, linesToDeliver } from "@/server/logistics/deliveries";
+import { orderLogistics } from "@/server/logistics/tracking";
 import { pricingSettings } from "@/server/pricing/rates";
 import { PO_STATUS_LABEL, PO_STATUS_TONE } from "@/server/procurement/common";
 import { ORDER_STATUS_LABEL, TO_SEND } from "@/server/shop/orders";
@@ -36,6 +43,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     },
   });
   if (!order) notFound();
+  const canDeliver = staffCan(role, "manageDeliveries");
+  const [logistics, toDeliver] = await Promise.all([orderLogistics(prisma, order.id), linesToDeliver(prisma, order.id)]);
+  const packable = (TO_SEND.includes(order.status) || order.status === "FULFILLED") && toDeliver.some((l) => l.toDeliver > 0);
   const { locale, timeZone } = order.market;
   const money = (amountMinor: bigint, currency = order.currency) => formatMoney({ amountMinor, currency }, locale);
   const paid = order.payments.reduce((s, p) => s + p.amountMinor, 0n);
@@ -104,7 +114,80 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           </Card>
         ) : null}
 
-        <OrderView order={order} staff proFormaHref={`/admin/orders/${order.id}/pro-forma`} />
+        <OrderView order={order} staff proFormaHref={`/admin/orders/${order.id}/pro-forma`} logistics={logistics} links={{ note: (n) => `/admin/deliveries/${encodeURIComponent(n)}/note`, pod: (n) => `/admin/deliveries/${encodeURIComponent(n)}/pod`, commercialInvoice: order.fulfilment === "DELIVERY" ? `/admin/orders/${order.id}/commercial-invoice` : undefined }} />
+
+        {canDeliver && order.status !== "CANCELLED" && order.status !== "AWAITING_PAYMENT" ? (
+          <Card>
+            <h2 className="text-headline font-bold">Deliveries</h2>
+            {logistics.deliveries.filter((d) => d.status !== "DELIVERED").map((d) => (
+              <div key={d.id} className="mt-4 rounded-md border border-line p-4">
+                <p className="mb-3 text-callout">
+                  <a href={`/admin/deliveries/${encodeURIComponent(d.number)}/note`} className="font-semibold text-link underline underline-offset-4">
+                    {d.number}
+                  </a>{" "}
+                  {DELIVERY_STATUS_LABEL[d.status]}, {d.lines.reduce((n, l) => n + l.quantity, 0)} items. Print its delivery note and pack it with the goods.
+                </p>
+                {d.status === "PREPARED" ? (
+                  <div className="flex flex-wrap items-end gap-3">
+                    <ActionForm action={dispatchDeliveryAction} hidden={{ deliveryId: d.id, orderId: order.id }} label="Dispatch" size="md" variant="primary" confirm={`Dispatch ${d.number}? Its goods come out of stock and the customer can see it has left.`}>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-caption font-semibold">Carrier</span>
+                        <input name="carrier" defaultValue={d.carrier} className={cn(inputClass, "w-40")} />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-caption font-semibold">Tracking number</span>
+                        <input name="reference" defaultValue={d.reference} className={cn(inputClass, "w-40")} />
+                      </label>
+                    </ActionForm>
+                    <ActionForm action={cancelDeliveryAction} hidden={{ deliveryId: d.id, orderId: order.id }} label="Unpack" size="md" />
+                  </div>
+                ) : (
+                  <SpecForm action={deliveredAction} idPrefix={`d${d.id}-`} hidden={{ deliveryId: d.id, orderId: order.id }} fields={[{ kind: "text", id: "receivedBy", label: "Signed for by" }, { kind: "file", id: "pod", label: "Signed note or photo (optional)", accept: "application/pdf,image/png,image/jpeg", hint: "PDF, PNG or JPEG, up to 10 MB." }]} submitLabel="Mark delivered" variant="secondary" />
+                )}
+              </div>
+            ))}
+            {packable ? (
+              <div className="mt-4">
+                <h3 className="mb-1 font-bold">Pack a delivery</h3>
+                <p className="mb-4 text-callout text-ink-muted">Choose how many of each line go in this box or trip. Send the rest later in another delivery.</p>
+                <SpecForm
+                  action={prepareDeliveryAction}
+                  idPrefix="pack-"
+                  hidden={{ orderId: order.id }}
+                  fields={[
+                    ...toDeliver.filter((l) => l.toDeliver > 0).map((l) => ({ kind: "text" as const, id: `qty-${l.id}`, label: `${l.description} (up to ${l.toDeliver})`, inputMode: "numeric" as const, defaultValue: String(l.toDeliver), hint: l.tracking ? TRACKING_LABEL[l.tracking] : "Not ordered yet", wide: true })),
+                    { kind: "text", id: "carrier", label: "Carrier (optional)" },
+                    { kind: "text", id: "reference", label: "Tracking number (optional)" },
+                  ]}
+                  submitLabel="Pack delivery"
+                  pendingLabel="Packing"
+                />
+              </div>
+            ) : !logistics.deliveries.some((d) => d.status !== "DELIVERED") ? (
+              <p className="mt-2 text-callout text-ink-muted">{logistics.deliveries.length ? "Everything has been delivered." : "Nothing to pack."}</p>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {canDeliver && order.status !== "CANCELLED" && order.procuredAt ? (
+          <Card>
+            <h2 className="text-headline font-bold">Set a line&apos;s step by hand</h2>
+            <p className="mt-1 mb-4 text-callout text-ink-muted">When something happened outside the system, such as a courier delivering it. The customer sees the step, not the note.</p>
+            <SpecForm
+              action={lineTrackingAction}
+              idPrefix="track-"
+              hidden={{ orderId: order.id }}
+              columns={3}
+              fields={[
+                { kind: "select", id: "lineId", label: "Line", options: order.lines.map((l) => ({ value: l.id, label: l.description })) },
+                { kind: "select", id: "status", label: "Step", options: TRACKING_ORDER.map((t) => ({ value: t, label: TRACKING_LABEL[t] })) },
+                { kind: "text", id: "note", label: "Note (optional)" },
+              ]}
+              submitLabel="Set step"
+              variant="secondary"
+            />
+          </Card>
+        ) : null}
 
         {staffCan(role, "viewPurchaseOrders") && order.procuredAt ? (
           <Card>
@@ -120,6 +203,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
                       to {p.supplier.name}, {formatMoney({ amountMinor: p.totalMinor, currency: p.currency }, locale)}
                     </span>
                     <Badge tone={PO_STATUS_TONE[p.status]}>{PO_STATUS_LABEL[p.status]}</Badge>
+                    {p.dropShip ? <Badge tone="highlight">Straight to the customer</Badge> : null}
                   </li>
                 ))}
               </ul>

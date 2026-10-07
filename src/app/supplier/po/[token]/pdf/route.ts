@@ -10,7 +10,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
   const po = await poByToken(prisma, token);
   if (!po) return new Response("Not found", { status: 404 });
   const e = env();
-  const bytes = await purchaseOrderPdf(po, { appUrl: e.APP_URL, legalName: e.COMPANY_LEGAL_NAME, token, ...(await poTerms(prisma)), timeZone: DEFAULT_TIME_ZONE });
+  const bytes = await purchaseOrderPdf(po, { appUrl: e.APP_URL, legalName: e.COMPANY_LEGAL_NAME, token, ...(await poTerms(prisma, po.id)), timeZone: DEFAULT_TIME_ZONE });
   return new Response(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
