@@ -65,6 +65,10 @@ export async function seedReferenceData(db: PrismaClient): Promise<string[]> {
     await db.quoteSettings.create({ data: { id: "global" } });
     added.push("quote rules");
   }
+  if (!(await db.procurementSettings.findUnique({ where: { id: "global" } }))) {
+    await db.procurementSettings.create({ data: { id: "global" } });
+    added.push("purchase order rules");
+  }
   added.push(...(await seedStarterCategories(db)));
   return added;
 }
@@ -104,6 +108,12 @@ export async function seedDemo(db: PrismaClient): Promise<string[]> {
       await db.exchangeRate.create({ data: { base: "USD", quote, rate, source: "seed", publishedAt: new Date() } });
       added.push(`demo rate USD to ${quote}`);
     }
+  }
+  // Where suppliers deliver, marked as a demo so the start-up check flags it on a real server.
+  const procurement = await db.procurementSettings.findUnique({ where: { id: "global" } });
+  if (procurement && !procurement.deliverTo) {
+    await db.procurementSettings.update({ where: { id: "global" }, data: { deliverTo: "ICT Distribution warehouse (demo)\nPlot 1, Gaborone West Industrial, Gaborone\nReceiving: Thabo Demo, +267 71 000 000", paymentTerms: "30 days from invoice" } });
+    added.push("demo delivery address for purchase orders");
   }
   added.push(...(await seedDemoCatalogue(db)));
   added.push(...(await seedDemoShop(db)));

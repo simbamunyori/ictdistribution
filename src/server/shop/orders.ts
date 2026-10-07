@@ -1,4 +1,4 @@
-import type { Fulfilment, Order, OrderStatus, OrgRole, PaymentMethod, Prisma, PrismaClient } from "@prisma/client";
+import type { Fulfilment, Market, Order, OrderStatus, OrgRole, PaymentMethod, Prisma, PrismaClient, Quote, QuoteLine, SupplierPriceRequest, SupplierQuoteResponse } from "@prisma/client";
 import { formatMoney, parseMoney, type Money } from "@/lib/money";
 import { deliveryFee, taxIncluded } from "@/lib/shop-pricing";
 import { formatDate } from "@/lib/zoned";
@@ -8,6 +8,7 @@ import { hashToken, newToken } from "@/server/auth/tokens";
 import { queueEmail } from "@/server/email/outbox";
 import { DomainError } from "@/server/errors";
 import { can } from "@/server/org/access";
+import { cancelUnsentFor } from "@/server/procurement/purchase-orders";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 import { cartLines, priceLines, subtotal, type PricedLine } from "./cart";
 import type { PriceContext } from "./prices";
@@ -232,7 +233,7 @@ export async function placeOrder(db: PrismaClient, deps: OrderDeps, cartId: stri
   return { order, token };
 }
 
-function orderEmailPayload(o: Order, market: { locale: string; timeZone: string }, lines?: PricedLine[]): Record<string, string> {
+export function orderEmailPayload(o: Order, market: { locale: string; timeZone: string }, lines?: PricedLine[]): Record<string, string> {
   const m = (amountMinor: bigint) => formatMoney({ amountMinor, currency: o.currency }, market.locale);
   return {
     number: o.number,
@@ -247,6 +248,124 @@ function orderEmailPayload(o: Order, market: { locale: string; timeZone: string 
     address: [o.addressLine1, o.addressLine2, o.city, o.postalCode].filter(Boolean).join(", "),
     customerReference: o.customerReference,
   };
+}
+
+// ─── Orders from accepted quotes ─────────────────────────────────────
+
+/** How the customer wants an accepted quote delivered and paid. */
+export interface QuoteOrderDetails {
+  phone: string;
+  fulfilment: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  postalCode: string;
+  collectionPointId: string;
+  paymentMethod: string;
+  notes: string;
+}
+
+type QuoteForOrder = Quote & { market: Market; lines: (QuoteLine & { responses: (SupplierQuoteResponse & { request: Pick<SupplierPriceRequest, "supplierId"> })[] })[] };
+
+/**
+ * Turns an accepted quote into an order, inside the acceptance's
+ * transaction: its lines and prices exactly as quoted (before tax, with
+ * the tax on the total), delivered as quoted, paid by bank transfer
+ * against the pro forma invoice or on account within the credit limit.
+ * Each line keeps the supplier and price agreed when quoting, for its
+ * purchase order.
+ */
+export async function orderFromQuote(tx: Prisma.TransactionClient, deps: OrderDeps, q: QuoteForOrder, details: QuoteOrderDetails, now: Date) {
+  const v = checkInput({ ...details, email: q.email, name: q.name, customerReference: (q.customerReference || q.tenderReference).slice(0, 60) });
+  if (q.subtotalMinor === null || q.taxMinor === null || q.totalMinor === null) throw new DomainError("conflict", "This quote has no prices yet.");
+  let collectionText = "";
+  if (v.fulfilment === "COLLECTION") {
+    const point = await tx.collectionPoint.findFirst({ where: { id: details.collectionPointId, marketCode: q.marketCode, active: true } });
+    if (!point) throw new DomainError("invalid", "Choose where to collect it.", undefined, { collectionPointId: "Choose where to collect it." });
+    collectionText = [point.name, point.address, point.hours].filter(Boolean).join("\n");
+  }
+  if (v.paymentMethod === "CARD") throw new DomainError("invalid", "Card payments aren't available yet. Choose bank transfer.", undefined, { paymentMethod: "Choose bank transfer." });
+  if (v.paymentMethod === "ACCOUNT" && !q.organisationId) throw new DomainError("invalid", "Buying on account is for business accounts with credit.", undefined, { paymentMethod: "Choose bank transfer." });
+  if (v.paymentMethod === "BANK_TRANSFER" && !q.market.bankDetails.trim()) throw new DomainError("invalid", `Bank transfer isn't set up for ${q.market.name} yet. Reply to the quote email and we will arrange payment.`, undefined, { paymentMethod: "Not available yet." });
+  const onAccount = v.paymentMethod === "ACCOUNT";
+  let termsDays: number | null = null;
+  if (onAccount) {
+    try {
+      termsDays = await reserveCredit(tx, q.organisationId!, q.totalMinor, now);
+    } catch (e) {
+      if (e instanceof DomainError && e.field) throw new DomainError("invalid", e.message, undefined, { [e.field]: e.message });
+      throw e;
+    }
+  }
+  const settings = await tx.shopSettings.findUniqueOrThrow({ where: { id: "global" } });
+  const lines = [];
+  for (const l of q.lines) {
+    if (l.unitPriceMinor === null || l.lineTotalMinor === null) continue;
+    let supplierCostMinor: bigint | null = null;
+    let supplierCurrency: string | null = null;
+    if (l.supplierId && l.costSource === "SUPPLIER") {
+      const r = l.responses.find((x) => x.request.supplierId === l.supplierId && !x.noOffer && x.costMinor !== null);
+      if (r) [supplierCostMinor, supplierCurrency] = [r.costMinor, r.currency];
+    } else if (l.supplierId && l.productId) {
+      const offer = await tx.supplierOffer.findUnique({ where: { supplierId_productId: { supplierId: l.supplierId, productId: l.productId } } });
+      if (offer) [supplierCostMinor, supplierCurrency] = [offer.costMinor, offer.currency];
+    }
+    lines.push({
+      productId: l.productId,
+      description: l.description,
+      mpn: l.mpn,
+      quantity: l.quantity,
+      unitPriceMinor: l.unitPriceMinor,
+      lineTotalMinor: l.lineTotalMinor,
+      unitCostBaseMinor: l.unitCostBaseMinor,
+      supplierId: supplierCostMinor === null ? null : l.supplierId,
+      supplierCostMinor,
+      supplierCurrency,
+      sortOrder: l.position,
+    });
+  }
+  if (!lines.length) throw new DomainError("conflict", "This quote has no priced lines.");
+  const token = newToken();
+  const [{ n }] = await tx.$queryRaw<{ n: bigint }[]>`SELECT nextval('order_number_seq') AS n`;
+  const order = await tx.order.create({
+    data: {
+      number: `${settings.orderPrefix}-${n}`,
+      status: onAccount ? "ON_ACCOUNT" : "AWAITING_PAYMENT",
+      marketCode: q.marketCode,
+      currency: q.currency,
+      customerType: q.customerType,
+      userId: q.userId,
+      organisationId: q.organisationId,
+      email: v.email,
+      name: v.name,
+      phone: v.phone,
+      fulfilment: v.fulfilment,
+      addressLine1: v.addressLine1,
+      addressLine2: v.addressLine2,
+      city: v.city,
+      postalCode: v.postalCode,
+      collectionPointId: v.fulfilment === "COLLECTION" ? details.collectionPointId : null,
+      collectionText,
+      quoteId: q.id,
+      pricesIncludeTax: false,
+      paymentMethod: v.paymentMethod,
+      bankDetails: q.market.bankDetails,
+      notes: v.notes,
+      customerReference: v.customerReference,
+      subtotalMinor: q.subtotalMinor,
+      deliveryMinor: 0n,
+      totalMinor: q.totalMinor,
+      taxMinor: q.taxMinor,
+      taxName: q.taxName,
+      taxRateBps: q.taxRateBps,
+      accessTokenHash: hashToken(token),
+      payBy: new Date(now.getTime() + (termsDays ?? settings.payDays) * 24 * 60 * 60 * 1000),
+      lines: { create: lines },
+    },
+  });
+  const m = (amountMinor: bigint) => formatMoney({ amountMinor, currency: q.currency }, q.market.locale);
+  await queueEmail(tx, deps.key, { to: v.email, kind: "order.placed", payload: { ...orderEmailPayload(order, q.market), lines: q.lines.filter((l) => l.lineTotalMinor !== null).map((l) => `${l.quantity} x ${l.description}: ${m(l.lineTotalMinor!)} before ${q.taxName}`).join("\n"), quote: q.number }, secret: { token } });
+  return { order, token };
 }
 
 // ─── Reading ─────────────────────────────────────────────────────────
@@ -371,9 +490,10 @@ export async function cancelOrder(db: PrismaClient, actor: StaffActor | null, de
     if (o.status === "CANCELLED" || o.status === "FULFILLED") throw new DomainError("conflict", "This order can't be cancelled now.");
     await tx.order.update({ where: { id: orderId }, data: { status: "CANCELLED", cancelledAt: now, cancelReason: why } });
     await releaseSpecials(tx, orderId);
+    const withSuppliers = await cancelUnsentFor(tx, orderId, now);
     const refund = o.payments.length > 0;
     await queueEmail(tx, deps.key, { to: o.email, kind: "order.cancelled", payload: { ...orderEmailPayload(o, o.market), reason: why, refund: refund ? "yes" : "" } });
-    const summary = `Cancelled order ${o.number}: ${why}${refund ? ". Payments were received, so a refund is due" : ""}`;
+    const summary = `Cancelled order ${o.number}: ${why}${refund ? ". Payments were received, so a refund is due" : ""}${withSuppliers ? `. ${withSuppliers} purchase ${withSuppliers === 1 ? "order is" : "orders are"} already with suppliers: cancel ${withSuppliers === 1 ? "it" : "them"} with the supplier` : ""}`;
     await audit(tx, actor ? staffAudit(actor, { action: "order.cancelled", summary, organisationId: o.organisationId, subjectUserId: o.userId, targetType: "Order", targetId: orderId, ipAddress: ip }) : { ...SYSTEM_ACTOR, action: "order.cancelled", summary, organisationId: o.organisationId, subjectUserId: o.userId, targetType: "Order", targetId: orderId, visibleToCustomer: Boolean(o.userId || o.organisationId) });
   });
 }

@@ -841,15 +841,17 @@ model Supplier {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  currencyRef Currency               @relation(fields: [currency], references: [code], onDelete: Restrict)
-  contacts    SupplierContact[]
-  categories  SupplierCategory[]
-  offers      SupplierOffer[]
-  events      SupplierEvent[]
-  format      PriceListFormat?
-  imports     PriceListImport[]
-  quoteLines  QuoteLine[]
-  rfqs        SupplierPriceRequest[]
+  currencyRef    Currency               @relation(fields: [currency], references: [code], onDelete: Restrict)
+  contacts       SupplierContact[]
+  categories     SupplierCategory[]
+  offers         SupplierOffer[]
+  events         SupplierEvent[]
+  format         PriceListFormat?
+  imports        PriceListImport[]
+  quoteLines     QuoteLine[]
+  rfqs           SupplierPriceRequest[]
+  orderLines     OrderLine[]
+  purchaseOrders PurchaseOrder[]
 }
 
 model SupplierContact {
@@ -1197,6 +1199,13 @@ model Order {
   city              String           @default("")
   postalCode        String           @default("")
   collectionPointId String?
+  /// The accepted quote it was made from, if any.
+  quoteId           String?          @unique
+  /// Shop orders show prices with tax; orders from quotes show them before
+  /// tax, with the tax added on the total, as the quote did.
+  pricesIncludeTax  Boolean          @default(true)
+  /// When its purchase orders were made, once it was paid or put on account.
+  procuredAt        DateTime?
   /// The collection point's name, address and hours when ordered.
   collectionText    String           @default("")
   paymentMethod     PaymentMethod
@@ -1228,6 +1237,8 @@ model Order {
   collectionPoint CollectionPoint? @relation(fields: [collectionPointId], references: [id], onDelete: SetNull)
   lines           OrderLine[]
   payments        OrderPayment[]
+  quote           Quote?           @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  purchaseOrders  PurchaseOrder[]
 
   @@index([status, createdAt])
   @@index([userId])
@@ -1255,10 +1266,18 @@ model OrderLine {
   specialUnits       Int     @default(0)
   /// Internal: landed cost per unit in the base currency when ordered, for margins.
   unitCostBaseMinor  BigInt?
+  /// Internal: the supplier and their price per unit (in their currency)
+  /// agreed when quoting. Empty for shop orders, which buy from the
+  /// supplier the sourcing rule picks when the purchase order is made.
+  supplierId         String?
+  supplierCostMinor  BigInt?
+  supplierCurrency   String?
   sortOrder          Int     @default(0)
 
-  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  order    Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product  Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
+  supplier Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  poLines  PurchaseOrderLine[]
 
   @@index([orderId])
 }
@@ -1404,6 +1423,7 @@ model Quote {
   organisation  Organisation?          @relation(fields: [organisationId], references: [id], onDelete: Restrict)
   lines         QuoteLine[]
   priceRequests SupplierPriceRequest[]
+  order         Order?
 
   @@index([status, createdAt])
   @@index([organisationId])
@@ -1544,4 +1564,127 @@ model InboundEmail {
   createdAt   DateTime @default(now())
 
   @@index([fromAddress, createdAt])
+}
+
+// ─── D6: procurement ─────────────────────────────────────────────────
+
+/// The Admin's rules for purchase orders (singleton "global").
+model ProcurementSettings {
+  id                String   @id @default("global")
+  /// Send purchase orders without anyone approving them, within the rules below.
+  autoSend          Boolean  @default(false)
+  /// The most a purchase order sent by itself can be worth, in the base currency.
+  maxAutoValueMinor BigInt   @default(200000)
+  /// Only to suppliers marked preferred.
+  onlyPreferred     Boolean  @default(true)
+  poPrefix          String   @default("PO")
+  /// Where suppliers deliver, printed on every purchase order.
+  deliverTo         String   @default("")
+  /// Our payment terms with suppliers, printed on every purchase order.
+  paymentTerms      String   @default("")
+  updatedAt         DateTime @updatedAt
+}
+
+enum PurchaseOrderStatus {
+  /// Waiting for staff to approve and send it.
+  AWAITING_APPROVAL
+  /// Approved; the supplier has no email, so staff send it on WhatsApp.
+  TO_SEND_BY_HAND
+  SENT
+  /// The supplier confirmed it.
+  CONFIRMED
+  SHIPPED
+  /// The goods reached us.
+  RECEIVED
+  CANCELLED
+}
+
+/// What we buy from one supplier for one order.
+model PurchaseOrder {
+  id                String              @id @default(cuid())
+  number            String              @unique
+  orderId           String
+  supplierId        String
+  status            PurchaseOrderStatus
+  channel           ReachChannel
+  /// The supplier's currency.
+  currency          String
+  totalMinor        BigInt
+  /// Internal: what it is worth in the base currency, for the rules.
+  totalBaseMinor    BigInt?
+  /// Why it waits for approval, one reason per line.
+  reviewReasons     String?
+  /// The supplier's link to their page for this order.
+  tokenHash         String              @unique
+  tokenSealed       String
+  approvedByLabel   String?
+  sentAt            DateTime?
+  confirmedAt       DateTime?
+  supplierReference String              @default("")
+  expectedShipDate  DateTime?
+  shippedAt         DateTime?
+  /// Waybill or tracking number.
+  shippingReference String              @default("")
+  supplierNote      String              @default("")
+  receivedAt        DateTime?
+  cancelledAt       DateTime?
+  cancelReason      String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  order     Order                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  supplier  Supplier                @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  lines     PurchaseOrderLine[]
+  documents PurchaseOrderDocument[]
+
+  @@index([status, createdAt])
+  @@index([orderId])
+  @@index([supplierId])
+}
+
+model PurchaseOrderLine {
+  id                String    @id @default(cuid())
+  purchaseOrderId   String
+  orderLineId       String?
+  position          Int
+  description       String
+  mpn               String    @default("")
+  quantity          Int
+  /// In the purchase order's currency, before tax.
+  unitCostMinor     BigInt
+  lineTotalMinor    BigInt
+  /// What the supplier confirmed they will send, when it differs.
+  confirmedQuantity Int?
+  shipDate          DateTime?
+  /// Serial numbers of the units sent, one per line.
+  serials           String    @default("")
+  note              String    @default("")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  orderLine     OrderLine?    @relation(fields: [orderLineId], references: [id], onDelete: SetNull)
+
+  @@index([purchaseOrderId, position])
+}
+
+enum PoDocumentKind {
+  INVOICE
+  PACKING_LIST
+  OTHER
+}
+
+/// A supplier's invoice, packing list or other paper for a purchase order. Kept in the database so backups include it.
+model PurchaseOrderDocument {
+  id              String         @id @default(cuid())
+  purchaseOrderId String
+  kind            PoDocumentKind
+  filename        String
+  contentType     String
+  size            Int
+  bytes           Bytes
+  uploadedByLabel String
+  createdAt       DateTime       @default(now())
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
 }

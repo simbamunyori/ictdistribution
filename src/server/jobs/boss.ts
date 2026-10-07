@@ -36,6 +36,18 @@ const JOBS: Job[] = [
     },
   },
   {
+    // Purchase orders for orders paid or put on account (docs/procurement.md). Placing and paying an order start it at once; this catches the rest.
+    name: "procurement",
+    cron: "*/5 * * * *",
+    inline: true,
+    run: async () => {
+      const { procureWaiting } = await import("@/server/procurement/purchase-orders");
+      const made = await procureWaiting(prisma, { key: appKey(), replyTo: env().QUOTES_EMAIL });
+      await deliverEmail();
+      return made;
+    },
+  },
+  {
     // The quotes mailbox: emailed requests and supplier replies (docs/quotes.md). Off while IMAP_URL is unset.
     name: "quote-mailbox",
     cron: "*/2 * * * *",

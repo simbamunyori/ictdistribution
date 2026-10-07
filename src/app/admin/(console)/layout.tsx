@@ -8,6 +8,7 @@ import { company } from "@/config/app";
 import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
 import { waitingChecks } from "@/server/accounts/verification";
+import { purchaseOrdersWaiting } from "@/server/procurement/purchase-orders";
 import { quotesWaiting } from "@/server/quotes/staff";
 import { ordersWaiting } from "@/server/shop/orders";
 import { STAFF_ROLE_LABEL, staffCan } from "@/server/staff/access";
@@ -24,19 +25,22 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const canCustomers = staffCan({ staffRole: role }, "viewCustomers");
   const canCredit = staffCan({ staffRole: role }, "manageCredit");
   const canQuotes = staffCan({ staffRole: role }, "viewQuotes");
-  const [held, lists, waiting, checks, applications, quotes, theme] = await Promise.all([
+  const canPurchaseOrders = staffCan({ staffRole: role }, "viewPurchaseOrders");
+  const [held, lists, waiting, checks, applications, quotes, pos, theme] = await Promise.all([
     prisma.exchangeRate.count({ where: { heldBack: { not: null } } }),
     canSuppliers ? waitingImports(prisma) : 0,
     canOrders ? ordersWaiting(prisma) : null,
     canCustomers && staffCan({ staffRole: role }, "verifyCustomers") ? waitingChecks(prisma) : 0,
     canCredit ? prisma.creditApplication.count({ where: { status: "PENDING" } }) : 0,
     canQuotes ? quotesWaiting(prisma) : null,
+    canPurchaseOrders ? purchaseOrdersWaiting(prisma) : null,
     currentTheme(),
   ]);
   const items: AdminNavItem[] = [
     { href: "/admin", label: "Overview" },
     ...(canOrders ? [{ href: "/admin/orders", label: "Orders", badge: waiting ? waiting.payment + waiting.toSend || undefined : undefined }] : []),
     ...(canQuotes ? [{ href: "/admin/quotes", label: "Quotes", badge: quotes ? quotes.review + quotes.byHand || undefined : undefined }] : []),
+    ...(canPurchaseOrders ? [{ href: "/admin/purchase-orders", label: "Purchase orders", badge: pos ? pos.approve + pos.byHand || undefined : undefined }] : []),
     ...(canCustomers ? [{ href: "/admin/customers", label: "Customers", badge: checks || undefined }] : []),
     ...(canCredit ? [{ href: "/admin/credit", label: "Credit", badge: applications || undefined }] : []),
     { href: "/admin/products", label: "Products" },
