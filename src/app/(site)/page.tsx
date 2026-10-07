@@ -33,7 +33,12 @@ export default async function Home() {
                 Register your business
               </Link>
             </div>
-            <p className="mt-4 text-callout text-ink-muted">The shop opens soon. Create an account now and we&apos;ll let you know.</p>
+            <p className="mt-4 text-callout text-ink-muted">
+              <Link href="/products" className="font-semibold text-link underline underline-offset-4">
+                Browse the range
+              </Link>{" "}
+              now. Prices and checkout open soon; create an account and we&apos;ll let you know.
+            </p>
           </div>
           <ul className="grid gap-3">
             {[

@@ -33,6 +33,15 @@ const JOBS: Job[] = [
     },
   },
   {
+    // Supplier price lists on a schedule (/admin/suppliers). Each run fetches only the ones that are due.
+    name: "price-lists",
+    cron: "5 * * * *",
+    run: async () => {
+      const { runScheduledImports } = await import("@/server/suppliers/price-lists");
+      return runScheduledImports(prisma);
+    },
+  },
+  {
     // Spent sign-in codes and ended sessions, a week on.
     name: "sign-in-cleanup",
     cron: "40 3 * * *",

@@ -4,6 +4,9 @@ import { ThemeSwitch } from "@/components/theme/theme-switch";
 import { buttonClass } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { currentSession } from "@/server/auth/next";
+import { compareIds } from "@/server/catalogue/compare";
+import { shopCategories } from "@/server/catalogue/shop";
+import { prisma } from "@/server/db";
 import { env } from "@/server/env";
 import { currentMarket } from "@/server/markets/current";
 import { currentTheme } from "@/server/theme";
@@ -11,7 +14,8 @@ import { MarketSwitcher } from "./market-switcher";
 
 /** The header and footer every public and account page shares. Phone first. */
 export async function SiteFrame({ children, back = "/" }: { children: React.ReactNode; back?: string }) {
-  const [{ market, markets }, session, theme] = await Promise.all([currentMarket(), currentSession("CUSTOMER"), currentTheme()]);
+  const [{ market, markets }, session, theme, categories, compare] = await Promise.all([currentMarket(), currentSession("CUSTOMER"), currentTheme(), shopCategories(prisma), compareIds()]);
+  const shop = categories.filter((c) => c.count);
   const signedIn = session?.stage === "ACTIVE";
   return (
     <div className="flex min-h-dvh flex-col">
@@ -36,6 +40,31 @@ export async function SiteFrame({ children, back = "/" }: { children: React.Reac
             )}
           </nav>
         </div>
+        {shop.length ? (
+          <nav aria-label="Shop" className="border-t border-line">
+            <ul className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-2 py-1.5 text-callout md:px-4">
+              <li>
+                <Link href="/products" className="block rounded-md px-2 py-1.5 font-semibold whitespace-nowrap text-ink hover:bg-surface">
+                  All products
+                </Link>
+              </li>
+              {shop.map((c) => (
+                <li key={c.id}>
+                  <Link href={`/categories/${c.slug}`} className="block rounded-md px-2 py-1.5 whitespace-nowrap text-ink-body hover:bg-surface hover:text-ink">
+                    {c.name}
+                  </Link>
+                </li>
+              ))}
+              {compare.length ? (
+                <li className="ml-auto">
+                  <Link href="/compare" className="block rounded-md px-2 py-1.5 font-semibold whitespace-nowrap text-link hover:bg-surface">
+                    Compare ({compare.length})
+                  </Link>
+                </li>
+              ) : null}
+            </ul>
+          </nav>
+        ) : null}
       </header>
       <main id="main" className="flex-1">
         {children}

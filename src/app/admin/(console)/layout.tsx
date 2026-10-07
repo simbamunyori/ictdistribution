@@ -8,6 +8,7 @@ import { company } from "@/config/app";
 import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
 import { STAFF_ROLE_LABEL, staffCan } from "@/server/staff/access";
+import { waitingImports } from "@/server/suppliers/price-lists";
 import { currentTheme } from "@/server/theme";
 
 export const metadata: Metadata = { title: { template: `%s · Admin · ${company.shortName}`, default: `Admin · ${company.shortName}` }, robots: { index: false } };
@@ -15,10 +16,19 @@ export const metadata: Metadata = { title: { template: `%s · Admin · ${company
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await requireStaff();
   const role = session.user.staffRole;
-  const [held, theme] = await Promise.all([prisma.exchangeRate.count({ where: { heldBack: { not: null } } }), currentTheme()]);
+  const canSuppliers = staffCan({ staffRole: role }, "viewSuppliers");
+  const [held, lists, theme] = await Promise.all([prisma.exchangeRate.count({ where: { heldBack: { not: null } } }), canSuppliers ? waitingImports(prisma) : 0, currentTheme()]);
   const items: AdminNavItem[] = [
     { href: "/admin", label: "Overview" },
     ...(staffCan({ staffRole: role }, "viewCustomers") ? [{ href: "/admin/customers", label: "Customers" }] : []),
+    { href: "/admin/products", label: "Products" },
+    { href: "/admin/categories", label: "Categories" },
+    ...(canSuppliers
+      ? [
+          { href: "/admin/suppliers", label: "Suppliers", badge: lists || undefined },
+          { href: "/admin/sourcing", label: "Supplier choice" },
+        ]
+      : []),
     { href: "/admin/customer-types", label: "Price levels" },
     { href: "/admin/markets", label: "Markets" },
     { href: "/admin/exchange-rates", label: "Exchange rates", badge: held || undefined },

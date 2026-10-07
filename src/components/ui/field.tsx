@@ -93,3 +93,32 @@ export function CheckboxField({ id, label, hint, className, ...props }: Omit<Bas
     </div>
   );
 }
+
+export function TextAreaField({ id, label, hint, error, className, rows = 4, ...props }: Base & Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, "id">) {
+  return (
+    <Field id={id} label={label} hint={hint} error={error} className={className}>
+      {(describedBy, invalid) => (
+        <textarea id={id} name={props.name ?? id} rows={rows} aria-describedby={describedBy} aria-invalid={invalid || undefined} className={cn(inputClass, "h-auto py-2.5 leading-relaxed")} {...props} />
+      )}
+    </Field>
+  );
+}
+
+/** A file input styled to match the other fields. */
+export function FileField({ id, label, hint, error, className, ...props }: Base & Omit<React.InputHTMLAttributes<HTMLInputElement>, "id" | "type">) {
+  return (
+    <Field id={id} label={label} hint={hint} error={error} className={className}>
+      {(describedBy, invalid) => (
+        <input
+          id={id}
+          name={props.name ?? id}
+          type="file"
+          aria-describedby={describedBy}
+          aria-invalid={invalid || undefined}
+          className={cn(inputClass, "h-auto py-2 file:mr-3 file:rounded-md file:border-0 file:bg-surface file:px-3 file:py-1.5 file:font-semibold file:text-ink")}
+          {...props}
+        />
+      )}
+    </Field>
+  );
+}

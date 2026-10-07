@@ -34,3 +34,18 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
 - **Migrations only add.** New tables and columns, never a drop or rename
   in the same release that stops using them, so a rollback always finds a
   database it can run on.
+- **Product images and datasheets live in PostgreSQL**, resized to WebP
+  on upload. The nightly backup and the restore test cover them with no
+  second store to sync, and the volume (a few hundred KB per product) is
+  small for a database. They are served with a year's cache, so the
+  database is read once per file per browser.
+- **Search uses PostgreSQL** (a trigram index on a search text column),
+  and filters and their counts are worked out in the app over at most
+  5,000 matches. This is enough for the launch catalogue; D11 adds a
+  search index if the range outgrows it.
+- **Specifications are stored as JSON per product** with their fields
+  defined per category in the admin area, so new categories and fields
+  need no code change or migration.
+- **Landed cost is a percentage per supplier** (freight, duties and
+  clearing) added to their cost before comparing suppliers, in US dollars.
+  Staff set it from experience; D5 can refine it per shipment.

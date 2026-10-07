@@ -10,11 +10,17 @@ import type { Env } from "./env";
 /** The demo accounts the seed makes. */
 export const DEMO_EMAILS = ["neo@example.co.bw", "kabo@example.co.bw", "lesego@example.co.bw", "staff@example.co.bw"];
 
+/** Demo suppliers end their name with this, and demo products start their part number with DEMO. */
+export const DEMO_SUFFIX = "(demo)";
+export const DEMO_MPN = "DEMO";
+
 const isLocalhost = (value: string) => /@localhost\b|\/\/localhost\b|\/\/127\.0\.0\.1\b/i.test(value);
 
 type PlaceholderEnv = Pick<Env, "APP_URL" | "MAIL_FROM" | "NODE_ENV"> & { SMTP_URL?: string | null };
 
-export async function findPlaceholders(db: Pick<PrismaClient, "user" | "market" | "exchangeRate">, e: PlaceholderEnv): Promise<string[]> {
+type PlaceholderDb = Pick<PrismaClient, "user" | "market" | "exchangeRate" | "supplier" | "product">;
+
+export async function findPlaceholders(db: PlaceholderDb, e: PlaceholderEnv): Promise<string[]> {
   const found: string[] = [];
   if (isLocalhost(e.APP_URL)) found.push(`APP_URL is ${e.APP_URL}. Set the public address, https://ictdistribution.africa.`);
   if (isLocalhost(e.MAIL_FROM)) found.push(`MAIL_FROM is ${e.MAIL_FROM}. Set a real sending address.`);
@@ -26,10 +32,14 @@ export async function findPlaceholders(db: Pick<PrismaClient, "user" | "market" 
   if (seeded) found.push(`${seeded} exchange ${seeded === 1 ? "rate is a demo value" : "rates are demo values"}. Fetch real ones at /admin/exchange-rates, or remove them.`);
   const demo = await db.user.findMany({ where: { email: { in: DEMO_EMAILS } }, select: { email: true } });
   if (demo.length) found.push(`Demo accounts exist (${demo.map((u) => u.email).join(", ")}). Remove them.`);
+  const demoSuppliers = await db.supplier.count({ where: { name: { endsWith: DEMO_SUFFIX } } });
+  if (demoSuppliers) found.push(`${demoSuppliers} demo ${demoSuppliers === 1 ? "supplier exists" : "suppliers exist"}. Remove them at /admin/suppliers.`);
+  const demoProducts = await db.product.count({ where: { mpnKey: { startsWith: DEMO_MPN }, status: { not: "ARCHIVED" } } });
+  if (demoProducts) found.push(`${demoProducts} demo ${demoProducts === 1 ? "product exists" : "products exist"} (part numbers starting ${DEMO_MPN}). Archive them at /admin/products.`);
   return found;
 }
 
-export async function assertNoPlaceholders(db: Pick<PrismaClient, "user" | "market" | "exchangeRate">, e: PlaceholderEnv, allow = process.env.ALLOW_PLACEHOLDERS === "yes") {
+export async function assertNoPlaceholders(db: PlaceholderDb, e: PlaceholderEnv, allow = process.env.ALLOW_PLACEHOLDERS === "yes") {
   if (e.NODE_ENV !== "production") return;
   const found = await findPlaceholders(db, e);
   if (!found.length) return;

@@ -19,6 +19,10 @@ export const STAFF_PERMISSIONS = {
   managePriceLevels: "Change the price level of each customer type",
   manageMarkets: "Add and change markets and currencies",
   manageRates: "Accept held-back exchange rates and fetch new ones",
+  manageCatalogue: "Add and change categories, products, images and datasheets",
+  viewSuppliers: "See suppliers, their costs and price lists",
+  manageSuppliers: "Add and change suppliers, their costs and how supplier choice works",
+  importPriceLists: "Import supplier price lists and apply them",
   manageStaff: "Invite staff, change their role and deactivate them",
   viewAudit: "Read the full audit log",
 } as const;
@@ -31,6 +35,10 @@ const ALLOWED: Record<StaffPermission, StaffRole[]> = {
   managePriceLevels: ["ADMIN"],
   manageMarkets: ["ADMIN"],
   manageRates: ["ADMIN", "FINANCE"],
+  manageCatalogue: ["ADMIN", "PROCUREMENT"],
+  viewSuppliers: ["ADMIN", "SALES", "PROCUREMENT", "LOGISTICS", "FINANCE"],
+  manageSuppliers: ["ADMIN", "PROCUREMENT"],
+  importPriceLists: ["ADMIN", "PROCUREMENT"],
   manageStaff: ["ADMIN"],
   viewAudit: ["ADMIN", "FINANCE"],
 };

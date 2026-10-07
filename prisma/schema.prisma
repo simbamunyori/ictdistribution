@@ -10,7 +10,8 @@
 //   buy as themselves, with no organisation.
 // - AuditEvent rows are never edited or deleted (enforced by a trigger).
 // - Supplier names, costs and sourcing never appear in a customer-facing
-//   model or page (later milestones keep them in staff-only models).
+//   page. They live only in the Supplier* and PriceList* models, which
+//   only staff pages read (src/server/suppliers).
 
 generator client {
   provider = "prisma-client-js"
@@ -32,33 +33,34 @@ model Currency {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  markets Market[]
+  markets   Market[]
+  suppliers Supplier[]
 }
 
 /// A country we sell in. Decides currency, how amounts and dates are
 /// written, and the price conversion rules. Edited in /admin/markets.
 model Market {
   /// "bw", "za", "zw". Lower-case ISO 3166-1 alpha-2 of the country.
-  code          String   @id
-  name          String
+  code         String   @id
+  name         String
   /// ISO 3166-1 alpha-2, upper case.
-  country       String   @unique
-  currency      String
+  country      String   @unique
+  currency     String
   /// BCP 47, for writing money and dates, e.g. "en-BW".
-  locale        String
-  timeZone      String
-  enabled       Boolean  @default(false)
+  locale       String
+  timeZone     String
+  enabled      Boolean  @default(false)
   /// Where visitors go when their country isn't one of ours. Exactly one.
-  isDefault     Boolean  @default(false)
-  sortOrder     Int      @default(0)
+  isDefault    Boolean  @default(false)
+  sortOrder    Int      @default(0)
   /// Basis points added to the exchange rate when converting our base
   /// prices, to cover the rate moving before we pay. 200 is 2%.
-  fxBufferBps   Int      @default(200)
+  fxBufferBps  Int      @default(200)
   /// Converted prices are rounded up to a multiple of this many minor
   /// units. 100 in BWP rounds up to the next whole pula; 0 or 1 leaves them.
-  roundToMinor  Int      @default(100)
-  supportEmail  String?
-  updatedAt     DateTime @updatedAt
+  roundToMinor Int      @default(100)
+  supportEmail String?
+  updatedAt    DateTime @updatedAt
 
   currencyRef   Currency       @relation(fields: [currency], references: [code], onDelete: Restrict)
   organisations Organisation[]
@@ -67,18 +69,21 @@ model Market {
 
 /// Settings that apply to every market. One row, id "global".
 model PricingSettings {
-  id                String    @id @default("global")
+  id              String       @id @default("global")
   /// The currency our catalogue prices are kept in. Customers see theirs.
-  baseCurrency      String    @default("USD")
+  baseCurrency    String       @default("USD")
   /// A new rate that moves more than this since the one in use is held back
   /// for an Admin or Finance to accept. 1,000 is 10%.
-  rateJumpHoldBps   Int       @default(1000)
+  rateJumpHoldBps Int          @default(1000)
   /// Rates older than this many hours raise a warning to staff.
-  rateMaxAgeHours   Int       @default(48)
+  rateMaxAgeHours Int          @default(48)
   /// When rates were last fetched, and why the last try failed.
-  ratesCheckedAt    DateTime?
-  ratesError        String?
-  updatedAt         DateTime  @updatedAt
+  ratesCheckedAt  DateTime?
+  ratesError      String?
+  /// How a product's supplier is chosen when neither it nor its category
+  /// says otherwise. Edited in /admin/sourcing.
+  sourcingRule    SourcingRule @default(CHEAPEST_LANDED)
+  updatedAt       DateTime     @updatedAt
 }
 
 /// One exchange rate as fetched: 1 base = rate quote, as exact decimal
@@ -114,17 +119,17 @@ enum CustomerTypeCode {
 /// /admin/customer-types. The category markups, volume breaks and
 /// per-customer prices of D4 build on this.
 model CustomerType {
-  code         CustomerTypeCode @id
-  name         String
-  description  String
+  code          CustomerTypeCode @id
+  name          String
+  description   String
   /// Markup on our cost for this price level, in basis points. 2,500 is 25%.
-  markupBps    Int
+  markupBps     Int
   /// Business types are organisations with their own users.
-  organisation Boolean
+  organisation  Boolean
   /// Individuals may check out without an account.
-  guestCheckout Boolean         @default(false)
-  sortOrder    Int              @default(0)
-  updatedAt    DateTime         @updatedAt
+  guestCheckout Boolean          @default(false)
+  sortOrder     Int              @default(0)
+  updatedAt     DateTime         @updatedAt
 
   organisations Organisation[]
 }
@@ -170,13 +175,13 @@ model User {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  market        Market?            @relation(fields: [marketCode], references: [code], onDelete: Restrict)
-  memberships   Membership[]
-  sessions      Session[]
-  identities    ExternalIdentity[]
-  passkeys      Passkey[]
-  invitationsSent StaffInvitation[] @relation("staffInvitedBy")
-  staffInvitation StaffInvitation?  @relation("staffInvitationAccepted")
+  market          Market?            @relation(fields: [marketCode], references: [code], onDelete: Restrict)
+  memberships     Membership[]
+  sessions        Session[]
+  identities      ExternalIdentity[]
+  passkeys        Passkey[]
+  invitationsSent StaffInvitation[]  @relation("staffInvitedBy")
+  staffInvitation StaffInvitation?   @relation("staffInvitationAccepted")
 }
 
 enum OrgRole {
@@ -426,4 +431,429 @@ model OutboundEmail {
   createdAt     DateTime    @default(now())
 
   @@index([status, nextAttemptAt])
+}
+
+// ─── Catalogue ───────────────────────────────────────────────────────
+
+/// A category, or a subcategory one level below one. Managed in
+/// /admin/categories.
+model Category {
+  id           String        @id @default(cuid())
+  /// In the address, e.g. "laptops". Unique across all categories.
+  slug         String        @unique
+  name         String
+  description  String        @default("")
+  parentId     String?
+  sortOrder    Int           @default(0)
+  /// Hidden categories, and everything in them, stay out of the shop.
+  active       Boolean       @default(true)
+  /// How to choose a supplier for products here. Null follows the parent, then the global rule.
+  sourcingRule SourcingRule?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  parent      Category?            @relation("subcategories", fields: [parentId], references: [id], onDelete: Restrict)
+  children    Category[]           @relation("subcategories")
+  specFields  SpecField[]
+  products    Product[]
+  suppliers   SupplierCategory[]
+  /// Categories whose products we suggest alongside these, e.g. memory for laptops.
+  suggests    CategorySuggestion[] @relation("suggestFrom")
+  suggestedBy CategorySuggestion[] @relation("suggestTo")
+
+  @@index([parentId, sortOrder])
+}
+
+/// "Products in this category go well with products in that one."
+model CategorySuggestion {
+  categoryId String
+  relatedId  String
+
+  category Category @relation("suggestFrom", fields: [categoryId], references: [id], onDelete: Cascade)
+  related  Category @relation("suggestTo", fields: [relatedId], references: [id], onDelete: Cascade)
+
+  @@id([categoryId, relatedId])
+}
+
+enum SpecKind {
+  TEXT
+  NUMBER
+  YES_NO
+  /// One of a fixed list of options.
+  CHOICE
+}
+
+/// A specification every product in a category carries, such as "Memory"
+/// in GB for laptops. Subcategories inherit their parent's.
+model SpecField {
+  id         String   @id @default(cuid())
+  categoryId String
+  /// Stable name the product's values are kept under, e.g. "memory_gb".
+  key        String
+  label      String
+  kind       SpecKind
+  /// Written after numbers, e.g. "GB".
+  unit       String   @default("")
+  /// For CHOICE: the options, in order.
+  options    String[]
+  /// Shoppers can filter by it.
+  filterable Boolean  @default(true)
+  /// Shown on product cards.
+  highlight  Boolean  @default(false)
+  /// Suggested items must have the same value, e.g. the memory type.
+  mustMatch  Boolean  @default(false)
+  sortOrder  Int      @default(0)
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, key])
+}
+
+model Brand {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  products Product[]
+}
+
+enum ProductStatus {
+  /// Being prepared. Only staff see it.
+  DRAFT
+  /// In the shop.
+  ACTIVE
+  /// No longer sold. Kept for orders and history.
+  ARCHIVED
+}
+
+/// Something we sell, under our brand. Never carries supplier details:
+/// those are on SupplierOffer.
+model Product {
+  id                String        @id @default(cuid())
+  slug              String        @unique
+  name              String
+  brandId           String
+  /// Manufacturer part number, as the manufacturer writes it.
+  mpn               String
+  /// The part number upper-cased with spaces, dashes and dots removed, for matching price lists.
+  mpnKey            String
+  categoryId        String
+  summary           String        @default("")
+  description       String        @default("")
+  /// Values by SpecField key: text, number or true/false.
+  specs             Json          @default("{}")
+  warrantyMonths    Int?
+  /// e.g. "Manufacturer, carry-in".
+  warrantyTerms     String        @default("")
+  /// Shown with a price to everyone in the shop (D3). Others ask shoppers to register a business.
+  sellToIndividuals Boolean       @default(false)
+  status            ProductStatus @default(DRAFT)
+  /// How to choose its supplier. Null follows the category, then the global rule.
+  sourcingRule      SourcingRule?
+  /// Name, brand, part number, category and specification values, lower-cased, for search.
+  searchText        String        @default("")
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  brand    Brand           @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  category Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  media    ProductMedia[]
+  offers   SupplierOffer[]
+  links    ProductLink[]   @relation("linkFrom")
+  linkedBy ProductLink[]   @relation("linkTo")
+
+  @@unique([brandId, mpn])
+  @@index([mpnKey])
+  @@index([categoryId, status])
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+enum MediaKind {
+  IMAGE
+  DATASHEET
+}
+
+/// A product image or datasheet. Kept in the database, so every backup
+/// has them. Images are resized to WebP when uploaded.
+model ProductMedia {
+  id          String    @id @default(cuid())
+  productId   String
+  kind        MediaKind
+  /// The name it was uploaded with, for downloads.
+  filename    String
+  contentType String
+  bytes       Bytes
+  /// IMAGE: a small copy for product cards.
+  thumb       Bytes?
+  width       Int?
+  height      Int?
+  size        Int
+  /// IMAGE: what it shows, for people who can't see it. DATASHEET: its title.
+  alt         String    @default("")
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, kind, sortOrder])
+}
+
+/// Two products that go together, shown on both. Stored once, lower id first.
+model ProductLink {
+  productId String
+  relatedId String
+  createdAt DateTime @default(now())
+
+  product Product @relation("linkFrom", fields: [productId], references: [id], onDelete: Cascade)
+  related Product @relation("linkTo", fields: [relatedId], references: [id], onDelete: Cascade)
+
+  @@id([productId, relatedId])
+  @@index([relatedId])
+}
+
+// ─── Suppliers (staff only) ──────────────────────────────────────────
+
+enum SupplierKind {
+  LOCAL
+  INTERNATIONAL
+  CHINA
+}
+
+enum SourcingRule {
+  /// Lowest cost once freight, duties and clearing are added.
+  CHEAPEST_LANDED
+  /// Shortest lead time.
+  FASTEST
+  /// Suppliers marked preferred first, then the cheapest of them.
+  PREFERRED
+}
+
+/// Who we buy from. Internal only: never shown to customers.
+model Supplier {
+  id            String       @id @default(cuid())
+  name          String       @unique
+  kind          SupplierKind
+  /// ISO 3166-1 alpha-2.
+  country       String
+  /// The currency they bill in.
+  currency      String
+  email         String?
+  /// International format, e.g. +8613800000000.
+  whatsapp      String?
+  phone         String?
+  website       String?
+  /// Their trade or ordering portal.
+  portalUrl     String?
+  notes         String       @default("")
+  /// Typical days from order to goods in our hands, when an offer doesn't say.
+  leadTimeDays  Int
+  /// Smallest order they accept, in their currency, when they have one.
+  minOrderMinor BigInt?
+  /// Freight, duties and clearing added to their cost, in basis points,
+  /// until D7 works it out per shipment. 1,500 is 15%.
+  landedCostBps Int          @default(0)
+  preferred     Boolean      @default(false)
+  active        Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  currencyRef Currency           @relation(fields: [currency], references: [code], onDelete: Restrict)
+  contacts    SupplierContact[]
+  categories  SupplierCategory[]
+  offers      SupplierOffer[]
+  events      SupplierEvent[]
+  format      PriceListFormat?
+  imports     PriceListImport[]
+}
+
+model SupplierContact {
+  id         String   @id @default(cuid())
+  supplierId String
+  name       String
+  role       String   @default("")
+  email      String?
+  phone      String?
+  whatsapp   String?
+  createdAt  DateTime @default(now())
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
+}
+
+/// The categories a supplier supplies.
+model SupplierCategory {
+  supplierId String
+  categoryId String
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([supplierId, categoryId])
+}
+
+enum SupplierEventKind {
+  ON_TIME
+  LATE
+  QUALITY_ISSUE
+  WRONG_ITEM
+  NOTE
+}
+
+/// The supplier's performance record: deliveries, problems and notes.
+/// D6 adds a row for each purchase order received.
+model SupplierEvent {
+  id              String            @id @default(cuid())
+  supplierId      String
+  kind            SupplierEventKind
+  occurredAt      DateTime
+  note            String            @default("")
+  /// Their invoice or our order number, when there is one.
+  reference       String?
+  recordedById    String?
+  recordedByLabel String
+  createdAt       DateTime          @default(now())
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId, occurredAt])
+}
+
+/// What one supplier charges us for one product.
+model SupplierOffer {
+  id             String   @id @default(cuid())
+  supplierId     String
+  productId      String
+  /// Their own code for it, when it differs from the part number.
+  supplierSku    String?
+  /// In `currency`, minor units, before freight and duties.
+  costMinor      BigInt
+  currency       String
+  /// Null uses the supplier's typical lead time.
+  leadTimeDays   Int?
+  /// Minimum order quantity.
+  moq            Int      @default(1)
+  /// Units they last said they have. Null when they don't say.
+  stock          Int?
+  active         Boolean  @default(true)
+  /// "staff" when typed, "import" from a price list.
+  source         String
+  priceUpdatedAt DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierId, productId])
+  @@index([productId])
+}
+
+enum ImportSchedule {
+  OFF
+  DAILY
+  WEEKLY
+}
+
+/// How to read one supplier's price list. Saved with the first import
+/// and reused for every one after it.
+model PriceListFormat {
+  supplierId        String         @id
+  /// Column heading for each field, e.g. {"mpn": "Part No", "cost": "Dealer Price"}.
+  columns           Json
+  /// Excel: the sheet to read. Null reads the first.
+  sheet             String?
+  /// The row holding the column headings, from 1.
+  headerRow         Int            @default(1)
+  /// Prices in the list are in this currency. Null: the supplier's.
+  currency          String?
+  /// Scheduled re-imports fetch the list from this https address.
+  sourceUrl         String?
+  schedule          ImportSchedule @default(OFF)
+  /// A scheduled list applies itself when no price moves more than this,
+  /// in basis points. Null: always wait for review.
+  autoApplyBps      Int?
+  /// Offers missing from a new list are switched off when it is applied.
+  deactivateMissing Boolean        @default(false)
+  lastFetchedAt     DateTime?
+  lastFetchError    String?
+  updatedAt         DateTime       @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+}
+
+enum ImportStatus {
+  /// Uploaded, waiting for staff to say which column is which.
+  NEEDS_COLUMNS
+  /// Read and waiting for review.
+  READY
+  APPLIED
+  DISCARDED
+}
+
+/// One price list, read and compared with what we have, waiting to be
+/// applied or already applied.
+model PriceListImport {
+  id             String       @id @default(cuid())
+  supplierId     String
+  filename       String
+  /// "upload" or "schedule".
+  origin         String
+  /// The file as received. Cleared from older imports to save space.
+  file           Bytes?
+  status         ImportStatus @default(READY)
+  /// Counts by change, e.g. {"PRICE_UP": 3}.
+  summary        Json         @default("{}")
+  /// The largest price move among matched lines, in basis points.
+  largestMoveBps Int?
+  createdById    String?
+  createdByLabel String
+  createdAt      DateTime     @default(now())
+  decidedAt      DateTime?
+  decidedByLabel String?
+
+  supplier Supplier       @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  rows     PriceListRow[]
+
+  @@index([supplierId, createdAt])
+}
+
+enum RowChange {
+  /// A product we have that this supplier didn't offer before.
+  NEW_OFFER
+  PRICE_UP
+  PRICE_DOWN
+  UNCHANGED
+  /// No product matches its part number.
+  UNMATCHED
+  /// Something in the line can't be read.
+  INVALID
+  /// We have an offer from this supplier that the list no longer has.
+  MISSING
+}
+
+model PriceListRow {
+  id                String    @id @default(cuid())
+  importId          String
+  /// The line in the file. 0 for MISSING.
+  line              Int
+  change            RowChange
+  mpn               String
+  brand             String?
+  name              String?
+  supplierSku       String?
+  costMinor         BigInt?
+  currency          String
+  stock             Int?
+  leadTimeDays      Int?
+  moq               Int?
+  productId         String?
+  previousCostMinor BigInt?
+  movedBps          Int?
+  error             String?
+
+  import PriceListImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([importId, change, line])
 }
