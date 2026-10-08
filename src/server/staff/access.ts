@@ -47,6 +47,8 @@ export const STAFF_PERMISSIONS = {
   manageReturns: "Approve or decline customers' returns, receive the items, repair or replace them and settle them",
   recordSerials: "Record the serial numbers of items sold, which start their warranty",
   issueCreditNotes: "Issue credit notes for returned items and record refunds paid",
+  viewReports: "See sales, margin, quote, supplier and stock reports",
+  manageFinance: "Chase overdue invoices, export to the accounting package and change finance settings",
   manageStaff: "Invite staff, change their role and deactivate them",
   viewAudit: "Read the full audit log",
 } as const;
@@ -87,6 +89,8 @@ const ALLOWED: Record<StaffPermission, StaffRole[]> = {
   manageReturns: ["ADMIN", "SALES", "LOGISTICS", "SUPPORT"],
   recordSerials: ["ADMIN", "SALES", "LOGISTICS", "SUPPORT"],
   issueCreditNotes: ["ADMIN", "FINANCE"],
+  viewReports: ["ADMIN", "SALES", "FINANCE"],
+  manageFinance: ["ADMIN", "FINANCE"],
   manageStaff: ["ADMIN"],
   viewAudit: ["ADMIN", "FINANCE"],
 };
@@ -115,6 +119,6 @@ export const STAFF_ROLE_DESCRIPTION: Record<StaffRole, string> = {
   SALES: "Customers, quotes and orders.",
   PROCUREMENT: "Suppliers, supplier prices and purchase orders.",
   LOGISTICS: "Shipments, warehouses and deliveries.",
-  FINANCE: "Exchange rates, credit, invoices, payments and the audit log.",
+  FINANCE: "Exchange rates, credit, invoices, payments, reports, the accounting export and the audit log.",
   SUPPORT: "Customer questions, returns and account help.",
 };

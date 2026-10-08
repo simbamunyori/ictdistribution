@@ -249,3 +249,38 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
   count anything that can be sold again into stock on the Stock page, as
   in D8.
 
+
+## D10
+
+- **Sales count when the order goes ahead**: paid, on account or sent,
+  by the day it was placed. Orders waiting for a bank transfer are open
+  orders, not sales, until paid.
+- **Reports are in the base currency at the rate in use on the order's
+  day**, so a past month does not move when rates do. Orders in a
+  currency with no rate at all are left out and named on the page.
+- **Margin is on landed cost recorded at sale**, the figure the price was
+  worked out from, not what the supplier finally charged. Lines without a
+  recorded cost are left out of margin and the table says on how much
+  margin was worked.
+- **Delivery charged to customers is sales with no cost against it**, its
+  own row under categories.
+- **Credit notes are shown beside sales, not taken off margin.** A credit
+  usually brings the item back, so taking only the sale off would
+  understate margin.
+- **The supplier of a line is the purchase order's**, else the one a
+  quote recorded, else our stock. Shop orders are "Not yet bought" until
+  their purchase order exists.
+- **Reminders go only for invoices past due**, on a schedule Finance sets,
+  never more than one in an hour for the same invoice. Each has its own
+  link so a forwarded reminder still opens the invoice. Paying, a credit
+  note or a cancellation stops them at once.
+- **The accounting export is files, not a live link.** CSV in each
+  package's own import layout is the one route that works with all
+  three and needs no keys kept on our server. Lines go before tax with
+  their share of the tax, so totals match to the cent; any difference is
+  an "Adjustment" line.
+- **Sage 50 gets invoices, credits and receipts.** It has no import for
+  money paid back, so refunds are entered by hand from the payments file.
+- **Reports are for Admin, Sales and Finance; chasing, exports and
+  finance settings for Admin and Finance.** Supplier names in reports are
+  staff only, as everywhere.

@@ -99,6 +99,10 @@ The integration tests empty and reseed `TEST_DATABASE_URL` (it must end in
 | Who sees what in a customer's account | `src/server/portal/scope.ts` | /account |
 | Serial numbers and warranty | `src/lib/warranty.ts`, `src/server/aftersales/units.ts` | /admin/warranty, /admin/orders, /account/warranty |
 | Repairs, replacements and credit notes | `src/server/portal/returns.ts`, `src/server/aftersales/credit-notes.ts` | /admin/returns, /account/returns |
+| Receivables and overdue reminders | `src/server/finance/reminders.ts` | /admin/finance, /admin/customers |
+| Finance settings and account codes | `src/server/finance/settings.ts` | /admin/finance/settings |
+| Reports: sales, margin, quotes, suppliers, stock, open orders | `src/lib/reports.ts`, `src/server/finance/reports.ts` | /admin/reports |
+| Export to Xero, QuickBooks and Sage | `src/lib/accounting-export.ts`, `src/server/finance/export.ts` | /admin/finance/export |
 | Background jobs | `src/server/jobs/boss.ts` | |
 
 Business rules (markups, buffers, rounding, rate rules, sourcing rules, who is staff) live
@@ -119,5 +123,6 @@ pages: [docs/procurement.md](docs/procurement.md). Shipments, landed
 cost, stock and deliveries: [docs/logistics.md](docs/logistics.md). The
 customer portal, invoices, statements, returns and saved lists:
 [docs/portal.md](docs/portal.md). Serials, warranty, repairs and credit
-notes: [docs/aftersales.md](docs/aftersales.md). Choices
+notes: [docs/aftersales.md](docs/aftersales.md). Overdue reminders,
+reports and the accounting export: [docs/finance.md](docs/finance.md). Choices
 made along the way: [docs/decisions.md](docs/decisions.md).

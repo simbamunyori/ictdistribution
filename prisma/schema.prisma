@@ -287,6 +287,8 @@ model Organisation {
   creditLimitMinor   BigInt?
   /// Days to pay an order bought on account.
   creditTermsDays    Int?
+  /// Its customer account code in the accounting package. Empty: made from the name.
+  accountCode        String             @default("")
   /// Stops new orders on account, whatever the limit.
   creditOnHold       Boolean            @default(false)
   createdAt          DateTime           @default(now())
@@ -2027,9 +2029,10 @@ model Invoice {
   accessTokenHash String   @unique
   createdAt       DateTime @default(now())
 
-  order        Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  order        Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  organisation Organisation?     @relation(fields: [organisationId], references: [id], onDelete: Restrict)
   creditNotes  CreditNote[]
+  reminders    InvoiceReminder[]
 
   @@index([organisationId, issuedAt])
   @@index([userId, issuedAt])
@@ -2277,4 +2280,51 @@ model OrderRefund {
   creditNote CreditNote? @relation(fields: [creditNoteId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
+}
+
+// ─── D10: finance and reporting ──────────────────────────────────────
+
+/// Finance rules, edited at /admin/finance/settings. One row, id "global".
+model FinanceSettings {
+  id                String   @id @default("global")
+  /// Email customers about overdue invoices.
+  remindersOn       Boolean  @default(true)
+  /// Days after the due date before the first reminder.
+  firstReminderDays Int      @default(3)
+  /// Days between reminders.
+  reminderEveryDays Int      @default(7)
+  /// Reminders per invoice, at most.
+  maxReminders      Int      @default(3)
+  /// The sales account code in the accounting package.
+  salesAccountCode  String   @default("4000")
+  /// The tax code for sales with tax in the accounting package.
+  taxCode           String   @default("T1")
+  /// The tax code for sales without tax (tax rate 0).
+  zeroTaxCode       String   @default("T0")
+  /// The customer account for people buying for themselves.
+  cashAccountCode   String   @default("CASHSALE")
+  /// The bank account that receives payments, for Sage receipts.
+  bankAccountCode   String   @default("1200")
+  updatedByLabel    String?
+  updatedAt         DateTime @updatedAt
+}
+
+/// An overdue reminder emailed for an invoice.
+model InvoiceReminder {
+  id               String   @id @default(cuid())
+  invoiceId        String
+  /// 1 for the first, and so on.
+  sequence         Int
+  /// What was owed when it was sent.
+  outstandingMinor BigInt
+  /// The secret in the link it carries, so the invoice opens without signing in.
+  accessTokenHash  String   @unique
+  /// "schedule" or the staff member who sent it.
+  sentByLabel      String
+  sentAt           DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, sequence])
+  @@index([sentAt])
 }
