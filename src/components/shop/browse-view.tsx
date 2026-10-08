@@ -3,7 +3,7 @@ import Link from "next/link";
 import { buttonClass } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
-import type { browse } from "@/server/catalogue/shop";
+import type { browse, ProductCard as Card } from "@/server/catalogue/shop";
 import { BusinessPrompt } from "./business-prompt";
 import { ProductCard, type Where } from "./product-card";
 
@@ -33,7 +33,7 @@ function hrefWithout(path: string, search: Search, key: string, value: string | 
   return s ? `${path}?${s}` : path;
 }
 
-export function BrowseView({ path, search, result, compare, where, categoryLinks }: { path: string; search: Search; result: Result; compare: string[]; where: Where; categoryLinks?: { href: string; label: string; count: number }[] }) {
+export function BrowseView({ path, search, result, compare, where, categoryLinks, close = [] }: { path: string; search: Search; result: Result; compare: string[]; where: Where; categoryLinks?: { href: string; label: string; count: number }[]; close?: Card[] }) {
   const q = typeof search.q === "string" ? search.q : "";
   const back = hrefWith(path, search, {});
   const chosen = [
@@ -189,9 +189,31 @@ export function BrowseView({ path, search, result, compare, where, categoryLinks
             ))}
           </ul>
         ) : (
-          <div className="rounded-lg border border-line bg-raised p-6">
-            <p className="font-semibold">Nothing matches.</p>
-            <p className="mt-1 text-ink-muted">Try fewer words or filters. Ask us for anything you can&apos;t find: we source most ICT products on request.</p>
+          <div className="flex flex-col gap-6">
+            <div className="rounded-lg border border-line bg-raised p-6">
+              <p className="font-semibold">Nothing matches exactly.</p>
+              <p className="mt-1 text-ink-muted">
+                Try fewer words or filters, or{" "}
+                <Link href={q ? `/assistant?q=${encodeURIComponent(q)}` : "/assistant"} className="text-link underline underline-offset-4">
+                  tell our assistant what you need
+                </Link>
+                . We source most ICT products on request.
+              </p>
+            </div>
+            {close.length ? (
+              <section aria-labelledby="close-matches">
+                <h2 id="close-matches" className="mb-3 text-headline font-bold">
+                  Close matches
+                </h2>
+                <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {close.map((p) => (
+                    <li key={p.id} className="flex">
+                      <ProductCard product={p} comparing={compare.includes(p.id)} back={back} where={where} />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
           </div>
         )}
         {result.pages > 1 ? (

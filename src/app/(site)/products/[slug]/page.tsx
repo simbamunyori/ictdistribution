@@ -17,13 +17,24 @@ import { TRADE_MAX_LINE } from "@/server/shop/cart";
 import { formatMoney } from "@/lib/money";
 import { shopSettings } from "@/server/shop/settings";
 import { shopper, shopPrices, shopWhere } from "@/server/shop/viewer";
+import { company } from "@/config/app";
+import { breadcrumbJsonLd, jsonLdText, metaDescription, productJsonLd } from "@/lib/seo";
+import { env } from "@/server/env";
 
 type Props = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const p = await shopProduct(prisma, (await params).slug);
   if (!p) return { title: "Not found" };
-  return { title: `${p.brand.name} ${p.name}`, description: p.summary || `${p.brand.name} ${p.name}, part number ${p.mpn}.` };
+  const title = `${p.brand.name} ${p.name}`;
+  const description = metaDescription(p.summary || p.description || `${title}, part number ${p.mpn}, from ${company.name}.`);
+  const image = p.images[0];
+  return {
+    title,
+    description,
+    alternates: { canonical: `/products/${p.slug}` },
+    openGraph: { type: "website", title, description, url: `/products/${p.slug}`, siteName: company.name, ...(image ? { images: [{ url: `/media/${image.id}`, alt: image.alt || title, ...(image.width && image.height ? { width: image.width, height: image.height } : {}) }] } : {}) },
+  };
 }
 
 const size = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`);
@@ -42,8 +53,18 @@ export default async function ProductPage({ params }: Props) {
   const back = `/products/${p.slug}`;
   const [main, ...more] = p.images;
   const c = p.category;
+  const site = env().APP_URL;
+  const url = `${site}/products/${p.slug}`;
+  // For search engines: the retail price only, as a visitor who isn't signed in sees it.
+  const structured = [
+    productJsonLd({ name: p.name, brand: p.brand.name, mpn: p.mpn, description: p.summary || p.description, url, images: p.images.map((m) => `${site}/media/${m.id}`), category: c.parent ? `${c.parent.name} > ${c.name}` : c.name, price: where.standing === "retail" && p.sellToIndividuals && p.price ? p.price.amount : null, leadTimeDays: p.price?.leadTimeDays ?? null, warrantyMonths: p.warrantyMonths }),
+    breadcrumbJsonLd([{ name: "Products", url: `${site}/products` }, ...(c.parent ? [{ name: c.parent.name, url: `${site}/categories/${c.parent.slug}` }] : []), { name: c.name, url: `${site}/categories/${c.slug}` }, { name: `${p.brand.name} ${p.name}`, url }]),
+  ];
   return (
     <SiteFrame back={back}>
+      {structured.map((d, i) => (
+        <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdText(d) }} />
+      ))}
       <div className="mx-auto max-w-6xl px-4 py-10 md:px-6">
         <nav aria-label="Breadcrumb" className="mb-4 text-callout">
           <ol className="flex flex-wrap gap-1 text-ink-muted">

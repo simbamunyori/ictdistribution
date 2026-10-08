@@ -284,3 +284,25 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
 - **Reports are for Admin, Sales and Finance; chasing, exports and
   finance settings for Admin and Finance.** Supplier names in reports are
   staff only, as everywhere.
+
+## D11
+
+- **The assistant sees only what the shop shows the visitor.** Its search
+  tool returns the shop's own product cards for that visitor: their price,
+  whether they can buy it, lead time. Supplier, cost and margin never
+  reach the model, so it can't reveal them.
+- **One engine shape, two engines.** Claude answers when the key is set;
+  rules answer otherwise or when the call fails. The page and the stored
+  conversation are the same either way, so the shop works without a key.
+- **Every answer goes through the copy rules** before it is stored,
+  whichever engine wrote it.
+- **Conversations belong to a browser, then a person.** A secret in a
+  cookie finds the conversation; signing in claims it. Someone else's
+  signed-in conversation is never continued.
+- **Quote requests are drafted, not sent.** The visitor checks the lines
+  on the quote form and sends them, so nothing reaches Sales unasked.
+- **Search widens step by step**: every word, then most words, then
+  close spellings (pg_trgm). Exact matches always come first.
+- **Structured data carries a price only for retail products**, and only
+  the retail price. Trade prices depend on who is signed in, so they stay
+  off pages search engines read.

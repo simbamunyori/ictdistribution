@@ -168,6 +168,15 @@ export const TEMPLATES: Record<string, Template> = {
       footnote: "If something on the invoice is wrong, reply to this email and we will put it right.",
     },
   }),
+  "assistant.handover": (p, ctx) => ({
+    subject: `${str(p.name)} asked the site assistant for Sales`,
+    body: {
+      heading: "A visitor wants to talk to Sales",
+      paragraphs: [`${str(p.name)} asked the site assistant to pass them to Sales. Reply to them at ${str(p.email)}${str(p.phone) ? ` or call ${str(p.phone)}` : ""}.`, ...(str(p.asked) ? [`They started by asking: ${str(p.asked)}`] : [])],
+      ...(str(p.note) ? { box: { title: "Their note", text: str(p.note) } } : {}),
+      button: { label: "Read the conversation", url: `${ctx.appUrl}/admin/assistant/${encodeURIComponent(str(p.chatId))}` },
+    },
+  }),
   "return.requested": (p, ctx) => ({
     subject: `Return ${str(p.number)} received`,
     body: {

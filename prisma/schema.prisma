@@ -2328,3 +2328,52 @@ model InvoiceReminder {
   @@unique([invoiceId, sequence])
   @@index([sentAt])
 }
+
+/// The site assistant's settings, edited in /admin/assistant.
+model AssistantSettings {
+  id             String   @id @default("global")
+  enabled        Boolean  @default(true)
+  /// Where handovers to Sales are emailed. Empty: the quotes mailbox.
+  handoverEmail  String   @default("")
+  /// Most messages a visitor can send in one conversation.
+  maxMessages    Int      @default(30)
+  updatedByLabel String?
+  updatedAt      DateTime @updatedAt
+}
+
+enum AssistantChatStatus {
+  OPEN
+  /// The visitor asked to talk to Sales.
+  HANDED_OVER
+  /// Sales dealt with it.
+  CLOSED
+}
+
+/// A conversation with the site assistant. Found again by the secret in the visitor's cookie.
+model AssistantChat {
+  id             String              @id @default(cuid())
+  tokenHash      String              @unique
+  userId         String?
+  organisationId String?
+  marketCode     String
+  /// retail, trade or unverified: which prices the visitor saw.
+  standing       String
+  status         AssistantChatStatus @default(OPEN)
+  /// [{ role: "user" | "assistant", text, products?: [slug], at }]
+  messages       Json                @default("[]")
+  userMessages   Int                 @default(0)
+  /// Lines the assistant drafted for a quote request: [{ description, quantity }].
+  quoteDraft     Json?
+  handoverName   String              @default("")
+  handoverEmail  String              @default("")
+  handoverPhone  String              @default("")
+  handoverNote   String              @default("")
+  handedOverAt   DateTime?
+  closedByLabel  String?
+  closedAt       DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([status, updatedAt])
+  @@index([userId])
+}
