@@ -13,7 +13,7 @@ import { scopeWhere, type PortalViewer } from "./scope";
  * when received, including those made before an order was sent.
  */
 
-type Db = Pick<PrismaClient, "invoice" | "orderPayment" | "order" | "organisation" | "user">;
+type Db = Pick<PrismaClient, "invoice" | "orderPayment" | "creditNote" | "orderRefund" | "order" | "organisation" | "user">;
 type Who = Pick<PortalViewer, "userId" | "organisationId">;
 
 /** Every payment received for the viewer's orders, newest first. */
@@ -24,6 +24,11 @@ export async function customerPayments(db: Pick<PrismaClient, "orderPayment">, v
     take: 500,
     select: { id: true, method: true, amountMinor: true, reference: true, receivedOn: true, order: { select: { number: true, currency: true, invoice: { select: { number: true } }, market: { select: { locale: true, timeZone: true } } } } },
   });
+}
+
+/** Money we have paid back, newest first. */
+export async function customerRefunds(db: Pick<PrismaClient, "orderRefund">, v: Who) {
+  return db.orderRefund.findMany({ where: { order: scopeWhere(v) }, orderBy: [{ paidOn: "desc" }, { createdAt: "desc" }], take: 200, select: { id: true, amountMinor: true, reference: true, paidOn: true, creditNote: { select: { number: true } }, order: { select: { number: true, currency: true, market: { select: { locale: true, timeZone: true } } } } } });
 }
 
 /** Orders waiting for a bank transfer before we start: they have a pro forma invoice, not yet a tax invoice. */
@@ -76,22 +81,30 @@ export function statementPeriod(fromInput: string | undefined, toInput: string |
 /** The statement from the start of `from` to the end of `to`, with what is owed by age at the end of `to`. */
 export async function customerStatement(db: Db, v: Who, from: Date, to: Date): Promise<CustomerStatement> {
   const where = scopeWhere(v);
-  const [invoices, payments, who] = await Promise.all([
+  const [invoices, payments, credits, refunds, who] = await Promise.all([
     db.invoice.findMany({ where: { ...where, issuedAt: { lte: to } }, select: { number: true, currency: true, totalMinor: true, issuedAt: true, dueAt: true, orderId: true, order: { select: { number: true, customerReference: true } } } }),
     db.orderPayment.findMany({ where: { order: where, receivedOn: { lte: to } }, select: { amountMinor: true, receivedOn: true, reference: true, method: true, orderId: true, order: { select: { number: true, currency: true } } } }),
+    db.creditNote.findMany({ where: { ...where, issuedAt: { lte: to } }, select: { number: true, currency: true, totalMinor: true, issuedAt: true, orderId: true, invoice: { select: { number: true } } } }),
+    db.orderRefund.findMany({ where: { order: where, paidOn: { lte: to } }, select: { amountMinor: true, paidOn: true, reference: true, orderId: true, order: { select: { number: true, currency: true } } } }),
     v.organisationId
       ? db.organisation.findUniqueOrThrow({ where: { id: v.organisationId }, select: { name: true, address: true, market: { select: { locale: true, timeZone: true } } } })
       : db.user.findUniqueOrThrow({ where: { id: v.userId }, select: { name: true, email: true, market: { select: { locale: true, timeZone: true } } } }),
   ]);
-  const currencies = [...new Set([...invoices.map((i) => i.currency), ...payments.map((p) => p.order.currency)])].sort();
+  const currencies = [...new Set([...invoices.map((i) => i.currency), ...payments.map((p) => p.order.currency), ...credits.map((c) => c.currency)])].sort();
   const accounts = currencies.map((currency) => {
     const items: StatementItem[] = [
       ...invoices.filter((i) => i.currency === currency).map((i) => ({ date: i.issuedAt, kind: "invoice" as const, reference: i.number, details: `Order ${i.order.number}${i.order.customerReference ? `, your reference ${i.order.customerReference}` : ""}`, amountMinor: i.totalMinor })),
       ...payments.filter((p) => p.order.currency === currency).map((p) => ({ date: p.receivedOn, kind: "payment" as const, reference: p.order.number, details: `Payment, ${PAYMENT_LABEL[p.method].toLowerCase()}${p.reference ? `, ${p.reference}` : ""}`, amountMinor: p.amountMinor })),
+      ...credits.filter((c) => c.currency === currency).map((c) => ({ date: c.issuedAt, kind: "credit" as const, reference: c.number, details: `Credit note against invoice ${c.invoice.number}`, amountMinor: c.totalMinor })),
+      ...refunds.filter((r) => r.order.currency === currency).map((r) => ({ date: r.paidOn, kind: "refund" as const, reference: r.order.number, details: `Refund paid to you${r.reference ? `, ${r.reference}` : ""}`, amountMinor: r.amountMinor })),
     ];
-    const paidByOrder = new Map<string, bigint>();
-    for (const p of payments) paidByOrder.set(p.orderId, (paidByOrder.get(p.orderId) ?? 0n) + p.amountMinor);
-    const open = invoices.filter((i) => i.currency === currency).map((i) => ({ dueAt: i.dueAt, outstandingMinor: i.totalMinor - (paidByOrder.get(i.orderId) ?? 0n) }));
+    // Per order: what is owed is the invoice less credit notes, less payments net of refunds.
+    const netByOrder = new Map<string, bigint>();
+    const add = (id: string, n: bigint) => netByOrder.set(id, (netByOrder.get(id) ?? 0n) + n);
+    for (const p of payments) add(p.orderId, p.amountMinor);
+    for (const c of credits) add(c.orderId, c.totalMinor);
+    for (const r of refunds) add(r.orderId, -r.amountMinor);
+    const open = invoices.filter((i) => i.currency === currency).map((i) => ({ dueAt: i.dueAt, outstandingMinor: i.totalMinor - (netByOrder.get(i.orderId) ?? 0n) }));
     return { currency, ...buildStatement(items, from, to), ageing: ageing(open, to) };
   });
   const market = who.market ?? { locale: company.staffLocale, timeZone: "Africa/Gaborone" };
@@ -104,7 +117,7 @@ export async function statementPdf(st: CustomerStatement, ctx: { appUrl: string;
   const s = await sheet("Statement", `${date(st.from)} to ${date(st.to)}`);
   s.heading([ctx.legalName, company.domain, ctx.supportEmail ?? ""], [`Date: ${date(st.to)}`]);
   s.party("Statement for", st.name, [st.address.split("\n").join(", ")]);
-  if (!st.accounts.length) s.block("Nothing yet", "No invoices or payments up to this date.");
+  if (!st.accounts.length) s.block("Nothing yet", "No invoices, credit notes or payments up to this date.");
   for (const a of st.accounts) {
     const money = (n: bigint) => formatMoney({ amountMinor: n, currency: a.currency }, st.locale);
     const blank = (n: bigint) => (n ? money(n) : "");
@@ -114,7 +127,7 @@ export async function statementPdf(st: CustomerStatement, ctx: { appUrl: string;
         { label: "Reference", width: 80 },
         { label: "Details", width: 135 },
         { label: "Charged", width: 69, align: "right" },
-        { label: "Paid", width: 69, align: "right" },
+        { label: "Paid or credited", width: 69, align: "right" },
         { label: "Balance", width: 76, align: "right" },
       ],
       [

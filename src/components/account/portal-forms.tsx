@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { createListAction, renameListAction, requestReturnAction, saveToListAction, setListLineAction } from "@/app/(site)/account/portal-actions";
+import { createListAction, renameListAction, requestReturnAction, returnTrackingAction, saveToListAction, setListLineAction } from "@/app/(site)/account/portal-actions";
 import { Outcome } from "@/components/admin/forms";
 import { Button } from "@/components/ui/button";
 import { inputClass, SelectField, TextAreaField, TextField } from "@/components/ui/field";
@@ -94,10 +94,12 @@ export interface ReturnLineChoice {
   mpn: string;
   sent: number;
   available: number;
+  /** Serial-numbered units still with the customer, with their warranty in words. */
+  units: { id: string; serial: string; warranty: string }[];
 }
 
 /** Which items to send back from an order, and why. */
-export function ReturnForm({ orderNumber, lines, reasons, window }: { orderNumber: string; lines: ReturnLineChoice[]; reasons: Option[]; window: string }) {
+export function ReturnForm({ orderNumber, lines, reasons, wants, window, picked = [] }: { orderNumber: string; lines: ReturnLineChoice[]; reasons: Option[]; wants: Option[]; window: string; picked?: string[] }) {
   const [state, action, pending] = useActionState(requestReturnAction, {} as ActionState);
   const err = state.fieldErrors ?? {};
   const v = state.values ?? {};
@@ -119,15 +121,51 @@ export function ReturnForm({ orderNumber, lines, reasons, window }: { orderNumbe
               {err[`qty-${l.id}`] ? <p id={`qty-${l.id}-error`} className="text-callout font-semibold text-negative">{err[`qty-${l.id}`]}</p> : null}
             </div>
             <input id={`qty-${l.id}`} name={`qty-${l.id}`} inputMode="numeric" defaultValue={v[`qty-${l.id}`] ?? ""} disabled={!l.available} placeholder="0" aria-describedby={err[`qty-${l.id}`] ? `qty-${l.id}-note qty-${l.id}-error` : `qty-${l.id}-note`} aria-invalid={err[`qty-${l.id}`] ? true : undefined} className={inputClass} />
+            {l.units.length ? (
+              <fieldset className="sm:col-span-2">
+                <legend className="text-callout font-semibold text-ink">Which serial numbers</legend>
+                <div className="mt-1 flex flex-col gap-1">
+                  {l.units.map((u) => (
+                    <label key={u.id} className="flex items-center gap-2 text-callout">
+                      <input type="checkbox" name="unit" value={u.id} defaultChecked={state.values ? v[`unit-${u.id}`] === "on" : picked.includes(u.id)} className="size-4" />
+                      <span className="font-mono">{u.serial}</span>
+                      <span className="text-ink-muted">{u.warranty}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
           </div>
         ))}
       </fieldset>
-      <SelectField id="reason" label="Why" options={reasons} placeholder="Choose a reason" defaultValue={v.reason ?? ""} error={err.reason} hint={window} />
+      <SelectField id="reason" label="Why" options={reasons} placeholder="Choose a reason" defaultValue={v.reason ?? (picked.length ? "FAULTY" : "")} error={err.reason} hint={window} />
+      <SelectField id="wants" label="What would you like" options={wants} placeholder="Choose one" defaultValue={v.wants ?? (picked.length ? "REPAIR" : "")} error={err.wants} hint="We do this if we can. For a fault in warranty, the maker may decide between a repair and a replacement." />
       <TextAreaField id="details" label="What is wrong" rows={4} defaultValue={v.details ?? ""} error={err.details} hint="For a fault, say what happens and give the serial number if you have it." />
       <Outcome state={state} />
       <div>
         <Button type="submit" disabled={pending}>
           {pending ? "Sending" : "Ask for the return"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** How the customer is sending a return back to us. */
+export function ReturnTrackingForm({ number, carrier, reference }: { number: string; carrier: string; reference: string }) {
+  const [state, action, pending] = useActionState(returnTrackingAction, {} as ActionState);
+  const err = state.fieldErrors ?? {};
+  return (
+    <form action={action} className="flex flex-col gap-3" noValidate>
+      <input type="hidden" name="number" value={number} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TextField id="carrier" name="carrier" label="Courier" defaultValue={state.values?.carrier ?? carrier} error={err.carrier} />
+        <TextField id="reference" name="reference" label="Tracking number" defaultValue={state.values?.reference ?? reference} error={err.reference} />
+      </div>
+      <Outcome state={state} />
+      <div>
+        <Button type="submit" variant="secondary" disabled={pending}>
+          {pending ? "Saving" : "Save"}
         </Button>
       </div>
     </form>

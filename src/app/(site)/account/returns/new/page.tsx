@@ -4,7 +4,8 @@ import { ReturnForm } from "@/components/account/portal-forms";
 import { Card, PageHeader } from "@/components/ui/card";
 import { formatDate } from "@/lib/zoned";
 import { prisma } from "@/server/db";
-import { RETURN_REASON_LABEL, RETURN_REASONS, returnableLines } from "@/server/portal/returns";
+import { WARRANTY_STATE_LABEL } from "@/lib/warranty";
+import { RETURN_REASON_LABEL, RETURN_REASONS, RETURN_WANTS, RETURN_WANTS_LABEL, returnableLines } from "@/server/portal/returns";
 import { inScope, portalCan } from "@/server/portal/scope";
 import { portalViewer } from "@/server/portal/viewer";
 
@@ -35,8 +36,10 @@ export default async function NewReturnPage({ searchParams }: { searchParams: Pr
         ) : (
           <ReturnForm
             orderNumber={order.number}
-            lines={r.lines.map((l) => ({ id: l.id, description: l.description, mpn: l.mpn, sent: l.sent, available: l.available }))}
+            lines={r.lines.map((l) => ({ id: l.id, description: l.description, mpn: l.mpn, sent: l.sent, available: l.available, units: l.units.map((u) => ({ id: u.id, serial: u.serial, warranty: u.warranty === "IN_WARRANTY" && u.endsAt ? `In warranty until ${formatDate(u.endsAt, order.market.locale, order.market.timeZone)}` : WARRANTY_STATE_LABEL[u.warranty] })) }))}
             reasons={RETURN_REASONS.map((x) => ({ value: x, label: RETURN_REASON_LABEL[x] }))}
+            wants={RETURN_WANTS.map((x) => ({ value: x, label: RETURN_WANTS_LABEL[x] }))}
+            picked={q.unit ? [q.unit] : []}
             window={r.changeOfMindOpen && r.closes ? `Any reason until ${formatDate(r.closes, order.market.locale, order.market.timeZone)}. A fault at any time.` : `The ${r.returnDays} days for any reason have passed. A fault can still be returned.`}
           />
         )}

@@ -11,6 +11,8 @@ import { can } from "@/server/org/access";
 import { cancelUnsentFor } from "@/server/procurement/purchase-orders";
 import { advanceLines } from "@/server/logistics/tracking";
 import { issueInvoice } from "@/server/portal/invoices";
+import { orderMoney } from "@/server/aftersales/credit-notes";
+import { syncUnits } from "@/server/aftersales/units";
 import { issueForDelivery, releaseForOrder } from "@/server/logistics/stock";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 import { cartLines, priceLines, subtotal, type PricedLine } from "./cart";
@@ -450,7 +452,7 @@ export async function recordPayment(db: PrismaClient, actor: StaffActor, deps: O
   assertStaffCan(actor, "recordPayments");
   const now = deps.now ?? new Date();
   await db.$transaction(async (tx) => {
-    const o = await tx.order.findUnique({ where: { id: orderId }, include: { payments: true, market: true } });
+    const o = await tx.order.findUnique({ where: { id: orderId }, include: { payments: true, market: true, creditNotes: { select: { totalMinor: true } }, refunds: { select: { amountMinor: true } } } });
     if (!o) throw new DomainError("not-found", "No such order.");
     if (o.status === "CANCELLED") throw new DomainError("conflict", "This order was cancelled. Contact the customer about a refund instead.");
     let amount: bigint;
@@ -464,15 +466,15 @@ export async function recordPayment(db: PrismaClient, actor: StaffActor, deps: O
     const receivedOn = /^\d{4}-\d{2}-\d{2}$/.test(input.receivedOn) ? new Date(`${input.receivedOn}T12:00:00Z`) : null;
     if (!receivedOn || Number.isNaN(receivedOn.getTime()) || receivedOn.getTime() > now.getTime() + 86_400_000) throw new DomainError("invalid", "Enter the date it arrived.", "receivedOn");
     await tx.orderPayment.create({ data: { orderId, method: o.paymentMethod, amountMinor: amount, reference, receivedOn, recordedByLabel: actor.name } });
-    const paid = o.payments.reduce((s, p) => s + p.amountMinor, 0n) + amount;
+    const m = orderMoney(o.totalMinor, [...o.payments, { amountMinor: amount }], o.creditNotes, o.refunds);
     const money = (n: bigint) => formatMoney({ amountMinor: n, currency: o.currency }, o.market.locale);
     // On account, the order goes ahead before payment; paying it only settles the balance.
-    const nowPaid = o.paidAt === null && paid >= o.totalMinor;
+    const nowPaid = o.paidAt === null && m.outstanding === 0n;
     if (nowPaid) {
       await tx.order.update({ where: { id: orderId }, data: { paidAt: now, ...(o.status === "AWAITING_PAYMENT" ? { status: "PAID" } : {}) } });
       await queueEmail(tx, deps.key, { to: o.email, kind: o.paymentMethod === "ACCOUNT" ? "order.settled" : "order.paid", payload: orderEmailPayload(o, o.market) });
     }
-    await audit(tx, staffAudit(actor, { action: "order.payment", summary: `Recorded ${money(amount)} for order ${o.number}${reference ? ` (${reference})` : ""}${nowPaid ? ", now paid" : paid < o.totalMinor ? `, ${money(o.totalMinor - paid)} still to pay` : ""}`, organisationId: o.organisationId, subjectUserId: o.userId, targetType: "Order", targetId: orderId, ipAddress: ip }));
+    await audit(tx, staffAudit(actor, { action: "order.payment", summary: `Recorded ${money(amount)} for order ${o.number}${reference ? ` (${reference})` : ""}${nowPaid ? ", now paid" : m.outstanding ? `, ${money(m.outstanding)} still to pay` : ""}`, organisationId: o.organisationId, subjectUserId: o.userId, targetType: "Order", targetId: orderId, ipAddress: ip }));
   });
 }
 
@@ -491,6 +493,7 @@ export async function fulfilOrder(db: PrismaClient, actor: StaffActor, deps: Ord
     await issueForDelivery(tx, lines.map((l) => ({ orderLineId: l.id, quantity: l.quantity, remaining: l.quantity })), actor.name);
     if (o.fulfilment === "DELIVERY") await advanceLines(tx, lines.map((l) => l.id), "OUT_FOR_DELIVERY", actor.name, text, now);
     await issueInvoice(tx, deps.key, orderId, now);
+    await syncUnits(tx, orderId);
     await queueEmail(tx, deps.key, { to: o.email, kind: o.fulfilment === "COLLECTION" ? "order.ready" : "order.sent", payload: { ...orderEmailPayload(o, o.market), note: text } });
     await audit(tx, staffAudit(actor, { action: "order.fulfilled", summary: `Marked order ${o.number} as ${o.fulfilment === "COLLECTION" ? "ready to collect" : "sent"}${text ? `: ${text}` : ""}`, organisationId: o.organisationId, subjectUserId: o.userId, targetType: "Order", targetId: orderId, ipAddress: ip }));
   });

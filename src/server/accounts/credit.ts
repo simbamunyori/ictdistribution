@@ -18,14 +18,16 @@ type Member = Actor & { organisationId: string };
 
 export const MAX_TERMS_DAYS = 120;
 
-/** What is owed on account: orders not cancelled, less payments received for them. */
+/** What is owed on account: orders not cancelled, less credit notes, less payments received net of refunds. */
 export async function accountBalance(db: Pick<PrismaClient, "$queryRaw"> | Prisma.TransactionClient, organisationId: string, now = new Date()) {
   const [row] = await db.$queryRaw<{ owed: bigint | null; overdue: bigint | null }[]>`
     SELECT
-      SUM(GREATEST(o."totalMinor" - COALESCE(p.paid, 0), 0))::bigint AS owed,
-      SUM(CASE WHEN o."payBy" < ${now} THEN GREATEST(o."totalMinor" - COALESCE(p.paid, 0), 0) ELSE 0 END)::bigint AS overdue
+      SUM(GREATEST(o."totalMinor" - COALESCE(c.credited, 0) - COALESCE(p.paid, 0) + COALESCE(r.refunded, 0), 0))::bigint AS owed,
+      SUM(CASE WHEN o."payBy" < ${now} THEN GREATEST(o."totalMinor" - COALESCE(c.credited, 0) - COALESCE(p.paid, 0) + COALESCE(r.refunded, 0), 0) ELSE 0 END)::bigint AS overdue
     FROM "Order" o
     LEFT JOIN (SELECT "orderId", SUM("amountMinor")::bigint AS paid FROM "OrderPayment" GROUP BY "orderId") p ON p."orderId" = o.id
+    LEFT JOIN (SELECT "orderId", SUM("totalMinor")::bigint AS credited FROM "CreditNote" GROUP BY "orderId") c ON c."orderId" = o.id
+    LEFT JOIN (SELECT "orderId", SUM("amountMinor")::bigint AS refunded FROM "OrderRefund" GROUP BY "orderId") r ON r."orderId" = o.id
     WHERE o."organisationId" = ${organisationId} AND o."paymentMethod" = 'ACCOUNT' AND o.status <> 'CANCELLED'`;
   const clamp = (n: bigint | null) => (n && n > 0n ? n : 0n);
   return { owed: clamp(row?.owed ?? null), overdue: clamp(row?.overdue ?? null) };

@@ -70,7 +70,7 @@ export default async function StatementPage({ searchParams }: { searchParams: Pr
                         <th className={th}>Reference</th>
                         <th className={th}>Details</th>
                         <th className={`${th} text-right`}>Charged</th>
-                        <th className={`${th} text-right`}>Paid</th>
+                        <th className={`${th} text-right`}>Paid or credited</th>
                         <th className={`${th} text-right`}>Balance</th>
                       </tr>
                     </thead>
@@ -86,7 +86,7 @@ export default async function StatementPage({ searchParams }: { searchParams: Pr
                       {a.entries.map((e, i) => (
                         <tr key={i}>
                           <td className={td}>{date(e.date)}</td>
-                          <td className={td}>{e.kind === "invoice" ? <a href={`/invoices/${encodeURIComponent(e.reference)}`} className="text-link underline underline-offset-4">{e.reference}</a> : e.reference}</td>
+                          <td className={td}>{e.kind === "invoice" || e.kind === "credit" ? <a href={`/${e.kind === "invoice" ? "invoices" : "credit-notes"}/${encodeURIComponent(e.reference)}`} className="text-link underline underline-offset-4">{e.reference}</a> : e.reference}</td>
                           <td className={td}>{e.details}</td>
                           <td className={`${td} text-right tabular-nums`}>{e.debit ? money(e.debit) : ""}</td>
                           <td className={`${td} text-right tabular-nums`}>{e.credit ? money(e.credit) : ""}</td>

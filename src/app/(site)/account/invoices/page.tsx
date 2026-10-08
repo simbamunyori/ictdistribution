@@ -5,6 +5,7 @@ import { formatMoney } from "@/lib/money";
 import { INVOICE_STATE_LABEL, INVOICE_STATE_TONE } from "@/lib/statement";
 import { formatDate } from "@/lib/zoned";
 import { prisma } from "@/server/db";
+import { customerCreditNotes } from "@/server/aftersales/credit-notes";
 import { customerInvoices } from "@/server/portal/invoices";
 import { portalViewer } from "@/server/portal/viewer";
 
@@ -14,7 +15,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const q = await searchParams;
   const v = await portalViewer("/account/invoices");
   const open = q.show === "open";
-  const invoices = await customerInvoices(prisma, v, new Date(), { open });
+  const [invoices, credits] = await Promise.all([customerInvoices(prisma, v, new Date(), { open }), open ? [] : customerCreditNotes(prisma, v)]);
   return (
     <>
       <PageHeader title="Invoices" lead={`Tax invoices are made when an order is sent or ready to collect${v.organisationId ? ", for every order your team places" : ""}. Download any of them as a PDF.`} />
@@ -61,7 +62,10 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                       </td>
                       <td className={td}>{formatDate(i.issuedAt, locale, timeZone)}</td>
                       <td className={td}>{formatDate(i.dueAt, locale, timeZone)}</td>
-                      <td className={`${td} text-right tabular-nums`}>{money(i.totalMinor)}</td>
+                      <td className={`${td} text-right tabular-nums`}>
+                        {money(i.totalMinor)}
+                        {i.credited ? <span className="block text-caption text-ink-muted">less {money(i.credited)} credited</span> : null}
+                      </td>
                       <td className={`${td} text-right tabular-nums`}>{i.outstanding ? money(i.outstanding) : ""}</td>
                       <td className={td}>
                         <Badge tone={INVOICE_STATE_TONE[i.state]}>{INVOICE_STATE_LABEL[i.state]}</Badge>
@@ -78,6 +82,46 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
           <p>{open ? "Nothing to pay. Thank you." : "No invoices yet. Each order gets one when it is sent or ready to collect."}</p>
         </Card>
       )}
+      {credits.length ? (
+        <Card className="mt-6">
+          <h2 className="text-headline font-bold">Credit notes</h2>
+          <TableWrap label="Credit notes">
+            <table className="mt-3 w-full min-w-[34rem] text-callout">
+              <thead>
+                <tr>
+                  <th className={th}>Credit note</th>
+                  <th className={th}>Invoice</th>
+                  <th className={th}>Return</th>
+                  <th className={th}>Issued</th>
+                  <th className={`${th} text-right`}>Credited</th>
+                </tr>
+              </thead>
+              <tbody>
+                {credits.map((c) => (
+                  <tr key={c.id}>
+                    <td className={td}>
+                      <a href={`/credit-notes/${encodeURIComponent(c.number)}`} className="font-semibold text-link underline underline-offset-4">
+                        {c.number}
+                        <span className="sr-only"> (PDF)</span>
+                      </a>
+                    </td>
+                    <td className={td}>{c.invoice.number}</td>
+                    <td className={td}>
+                      {c.request ? (
+                        <Link href={`/account/returns/${encodeURIComponent(c.request.number)}`} className="text-link underline underline-offset-4">
+                          {c.request.number}
+                        </Link>
+                      ) : null}
+                    </td>
+                    <td className={td}>{formatDate(c.issuedAt, c.order.market.locale, c.order.market.timeZone)}</td>
+                    <td className={`${td} text-right tabular-nums`}>{formatMoney({ amountMinor: c.totalMinor, currency: c.currency }, c.order.market.locale)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableWrap>
+        </Card>
+      ) : null}
     </>
   );
 }

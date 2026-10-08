@@ -304,6 +304,8 @@ model Organisation {
   invoices           Invoice[]
   returns            ReturnRequest[]
   savedLists         SavedList[]
+  units              Unit[]
+  creditNotes        CreditNote[]
 
   @@index([customerType])
   @@index([verification])
@@ -762,6 +764,7 @@ model Product {
   stock          StockLevel[]
   stockMovements StockMovement[]
   savedListLines SavedListLine[]
+  units          Unit[]
 
   @@unique([brandId, mpn])
   @@index([mpnKey])
@@ -1263,6 +1266,9 @@ model Order {
   deliveries      Delivery[]
   invoice         Invoice?
   returns         ReturnRequest[]
+  units           Unit[]
+  creditNotes     CreditNote[]
+  refunds         OrderRefund[]
 
   @@index([status, createdAt])
   @@index([userId])
@@ -1301,6 +1307,8 @@ model OrderLine {
   tracking           LineTracking?
   /// Taken from our stock rather than bought for this order.
   fromStock          Boolean       @default(false)
+  /// Serial numbers typed by staff, one per line, for items from stock or not on a supplier's notice.
+  serials            String        @default("")
 
   order          Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product        Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -1310,6 +1318,7 @@ model OrderLine {
   deliveryLines  DeliveryLine[]
   stockMovements StockMovement[]
   returnLines    ReturnLine[]
+  units          Unit[]
 
   @@index([orderId])
 }
@@ -2020,6 +2029,7 @@ model Invoice {
 
   order        Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
   organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  creditNotes  CreditNote[]
 
   @@index([organisationId, issuedAt])
   @@index([userId, issuedAt])
@@ -2033,6 +2043,16 @@ enum ReturnReason {
   OTHER
 }
 
+/// What puts a return right: what the customer asks for, and what we did.
+enum ReturnOutcome {
+  /// A credit note against the invoice, refunded if already paid.
+  CREDIT
+  REPLACEMENT
+  REPAIR
+  /// Settled another way, as the note says (for example, no fault found).
+  OTHER
+}
+
 enum ReturnStatus {
   /// Asked for by the customer, waiting for us.
   REQUESTED
@@ -2041,7 +2061,9 @@ enum ReturnStatus {
   DECLINED
   /// The items are back with us.
   RECEIVED
-  /// Settled: refunded, replaced or repaired, as the note says.
+  /// Being repaired, by us or the maker.
+  IN_REPAIR
+  /// Settled: credited, replaced or repaired, as the outcome and note say.
   CLOSED
   /// Withdrawn by the customer before we answered.
   CANCELLED
@@ -2049,29 +2071,44 @@ enum ReturnStatus {
 
 /// A customer's request to send items from an order back.
 model ReturnRequest {
-  id               String       @id @default(cuid())
+  id                String         @id @default(cuid())
   /// e.g. RMA-100001.
-  number           String       @unique
-  orderId          String
-  userId           String?
-  organisationId   String?
-  status           ReturnStatus @default(REQUESTED)
-  reason           ReturnReason
+  number            String         @unique
+  orderId           String
+  userId            String?
+  organisationId    String?
+  status            ReturnStatus   @default(REQUESTED)
+  reason            ReturnReason
   /// What is wrong, in the customer's words.
-  details          String
-  requestedByLabel String
+  details           String
+  requestedByLabel  String
   /// Our answer, shown to the customer: how to send it back, why not, or how it was settled.
-  note             String       @default("")
-  decidedByLabel   String?
-  decidedAt        DateTime?
-  receivedAt       DateTime?
-  closedAt         DateTime?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  note              String         @default("")
+  decidedByLabel    String?
+  decidedAt         DateTime?
+  receivedAt        DateTime?
+  closedAt          DateTime?
+  /// What the customer asks for (D9).
+  wants             ReturnOutcome?
+  /// What we did, once settled.
+  outcome           ReturnOutcome?
+  /// How the customer sends it back to us.
+  inboundCarrier    String         @default("")
+  inboundReference  String         @default("")
+  repairStartedAt   DateTime?
+  /// Internal: the maker's or supplier's repair reference. Never shown to the customer.
+  supplierReference String         @default("")
+  /// How it comes back to the customer, repaired or replaced.
+  outboundCarrier   String         @default("")
+  outboundReference String         @default("")
+  sentBackAt        DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   order        Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
   organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Restrict)
   lines        ReturnLine[]
+  creditNote   CreditNote?
 
   @@index([orderId])
   @@index([organisationId, createdAt])
@@ -2087,6 +2124,7 @@ model ReturnLine {
 
   request   ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
   orderLine OrderLine     @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  units     ReturnUnit[]
 
   @@unique([returnId, orderLineId])
 }
@@ -2122,4 +2160,121 @@ model SavedListLine {
   product Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([listId, productId])
+}
+
+// ─── D9: after-sales ─────────────────────────────────────────────────
+
+enum UnitStatus {
+  /// With the customer, as sold.
+  WITH_CUSTOMER
+  /// Back with us under a return, or away for repair.
+  IN_REPAIR
+  /// Swapped for another unit under a return.
+  REPLACED
+  /// Taken back and credited.
+  RETURNED
+}
+
+/// One serial-numbered item sold, with its warranty. The warranty runs
+/// from the day it left us for as long as the product's warranty was
+/// when it was sold.
+model Unit {
+  id             String     @id @default(cuid())
+  serial         String
+  /// Upper-cased with spaces, dashes and dots removed, to find it however it is typed.
+  serialKey      String
+  orderId        String
+  orderLineId    String
+  productId      String?
+  userId         String?
+  organisationId String?
+  description    String
+  mpn            String     @default("")
+  warrantyMonths Int?
+  warrantyTerms  String     @default("")
+  /// When it left us. Empty until it is sent.
+  startsAt       DateTime?
+  endsAt         DateTime?
+  status         UnitStatus @default(WITH_CUSTOMER)
+  /// Where the serial came from: "supplier" (their shipping notice), "staff" (typed on the order) or "replacement".
+  source         String
+  /// The unit sent in its place, when it was replaced.
+  replacedById   String?    @unique
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderLine    OrderLine     @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  product      Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  replacedBy   Unit?         @relation("UnitReplacement", fields: [replacedById], references: [id], onDelete: SetNull)
+  replaces     Unit?         @relation("UnitReplacement")
+  returnUnits  ReturnUnit[]
+
+  @@unique([orderLineId, serialKey])
+  @@index([serialKey])
+  @@index([organisationId, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// Which serial-numbered units a return line covers.
+model ReturnUnit {
+  id           String @id @default(cuid())
+  returnLineId String
+  unitId       String
+
+  returnLine ReturnLine @relation(fields: [returnLineId], references: [id], onDelete: Cascade)
+  unit       Unit       @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  @@unique([returnLineId, unitId])
+  @@index([unitId])
+}
+
+/// Money taken off an invoice, for items returned. Numbered CN-100001 onwards.
+model CreditNote {
+  id              String   @id @default(cuid())
+  number          String   @unique
+  orderId         String
+  invoiceId       String
+  returnId        String?  @unique
+  userId          String?
+  organisationId  String?
+  currency        String
+  totalMinor      BigInt
+  taxMinor        BigInt
+  /// What is credited: [{ description, mpn, quantity, unitMinor, totalMinor }].
+  lines           Json
+  reason          String
+  issuedAt        DateTime
+  issuedByLabel   String
+  /// The secret in the link we email, so it opens without signing in.
+  accessTokenHash String   @unique
+  createdAt       DateTime @default(now())
+
+  order        Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  invoice      Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  request      ReturnRequest? @relation(fields: [returnId], references: [id], onDelete: SetNull)
+  organisation Organisation?  @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  refunds      OrderRefund[]
+
+  @@index([orderId])
+  @@index([organisationId, issuedAt])
+  @@index([userId, issuedAt])
+}
+
+/// Money paid back to a customer, recorded by Finance.
+model OrderRefund {
+  id              String   @id @default(cuid())
+  orderId         String
+  creditNoteId    String?
+  amountMinor     BigInt
+  reference       String   @default("")
+  paidOn          DateTime
+  recordedByLabel String
+  createdAt       DateTime @default(now())
+
+  order      Order       @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  creditNote CreditNote? @relation(fields: [creditNoteId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
 }

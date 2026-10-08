@@ -1,15 +1,16 @@
 /**
- * Statements and what is owed, worked out from invoices (what was
- * charged) and payments (what was received). Pure, so it is easy to test.
+ * Statements and what is owed, worked out from invoices and refunds (what
+ * was charged or paid out) and payments and credit notes (what was
+ * received or taken off). Pure, so it is easy to test.
  */
 
 export interface StatementItem {
   date: Date;
-  kind: "invoice" | "payment";
-  /** The invoice or order number. */
+  kind: "invoice" | "payment" | "credit" | "refund";
+  /** The invoice, credit note or order number. */
   reference: string;
   details: string;
-  /** Always positive: an invoice adds it, a payment takes it off. */
+  /** Always positive: an invoice or refund adds it, a payment or credit note takes it off. */
   amountMinor: bigint;
 }
 
@@ -23,21 +24,27 @@ export interface StatementEntry extends StatementItem {
 export interface Statement {
   opening: bigint;
   entries: StatementEntry[];
+  /** Invoices and refunds. */
   invoiced: bigint;
+  /** Payments and credit notes. */
   paid: bigint;
   closing: bigint;
 }
 
 const DAY = 86_400_000;
 
-/** Invoices before payments on the same day, so a balance never dips below zero for a moment. */
+const ORDER: Record<StatementItem["kind"], number> = { invoice: 0, credit: 1, payment: 2, refund: 3 };
+
+/** Debits before credits on the same day, so a balance never dips below zero for a moment. */
 function byDate(a: StatementItem, b: StatementItem) {
-  return a.date.getTime() - b.date.getTime() || (a.kind === b.kind ? a.reference.localeCompare(b.reference) : a.kind === "invoice" ? -1 : 1);
+  return a.date.getTime() - b.date.getTime() || ORDER[a.kind] - ORDER[b.kind] || a.reference.localeCompare(b.reference);
 }
+
+export const isDebit = (i: Pick<StatementItem, "kind">) => i.kind === "invoice" || i.kind === "refund";
 
 /** Everything from `from` up to the end of `to`, with the balance carried in from before. */
 export function buildStatement(items: StatementItem[], from: Date, to: Date): Statement {
-  const signed = (i: StatementItem) => (i.kind === "invoice" ? i.amountMinor : -i.amountMinor);
+  const signed = (i: StatementItem) => (isDebit(i) ? i.amountMinor : -i.amountMinor);
   const sorted = [...items].sort(byDate);
   const opening = sorted.filter((i) => i.date < from).reduce((s, i) => s + signed(i), 0n);
   let balance = opening;
@@ -47,9 +54,9 @@ export function buildStatement(items: StatementItem[], from: Date, to: Date): St
   for (const i of sorted) {
     if (i.date < from || i.date > to) continue;
     balance += signed(i);
-    if (i.kind === "invoice") invoiced += i.amountMinor;
+    if (isDebit(i)) invoiced += i.amountMinor;
     else paid += i.amountMinor;
-    entries.push({ ...i, debit: i.kind === "invoice" ? i.amountMinor : 0n, credit: i.kind === "payment" ? i.amountMinor : 0n, balance });
+    entries.push({ ...i, debit: isDebit(i) ? i.amountMinor : 0n, credit: isDebit(i) ? 0n : i.amountMinor, balance });
   }
   return { opening, entries, invoiced, paid, closing: balance };
 }
