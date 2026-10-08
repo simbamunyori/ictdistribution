@@ -60,6 +60,8 @@ export interface CategoryInput {
   sortOrder: number;
   active: boolean;
   sourcingRule: SourcingRule | null;
+  /** Customs tariff code for commercial invoices. Left out keeps what is there. */
+  hsCode?: string;
 }
 
 const RULES: SourcingRule[] = ["CHEAPEST_LANDED", "FASTEST", "PREFERRED"];
@@ -74,8 +76,10 @@ function checkCategory(input: CategoryInput) {
   if (description.length > 400) fieldErrors.description = "Keep it under 400 characters.";
   if (!Number.isInteger(input.sortOrder) || input.sortOrder < 0 || input.sortOrder > 10_000) fieldErrors.sortOrder = "Enter a whole number from 0 to 10,000.";
   if (input.sourcingRule && !RULES.includes(input.sourcingRule)) fieldErrors.sourcingRule = "Choose a rule.";
+  const hsCode = input.hsCode === undefined ? undefined : input.hsCode.replace(/[\s.]/g, "");
+  if (hsCode && !/^\d{4,10}$/.test(hsCode)) fieldErrors.hsCode = "Enter 4 to 10 digits, like 8471.30.";
   if (Object.keys(fieldErrors).length) throw new DomainError("invalid", "Check the highlighted fields.", undefined, fieldErrors);
-  return { name, slug, description };
+  return { name, slug, description, hsCode };
 }
 
 async function checkPlacement(tx: Prisma.TransactionClient, id: string | null, parentId: string | null) {
@@ -94,11 +98,11 @@ async function checkSlug(tx: Prisma.TransactionClient, slug: string, id: string 
 
 export async function createCategory(db: PrismaClient, actor: StaffActor, input: CategoryInput, ip?: string | null): Promise<Category> {
   assertStaffCan(actor, "manageCatalogue");
-  const { name, slug, description } = checkCategory(input);
+  const { name, slug, description, hsCode } = checkCategory(input);
   return db.$transaction(async (tx) => {
     await checkPlacement(tx, null, input.parentId);
     await checkSlug(tx, slug, null);
-    const c = await tx.category.create({ data: { name, slug, description, parentId: input.parentId, sortOrder: input.sortOrder, active: input.active, sourcingRule: input.sourcingRule } });
+    const c = await tx.category.create({ data: { name, slug, description, parentId: input.parentId, sortOrder: input.sortOrder, active: input.active, sourcingRule: input.sourcingRule, ...(hsCode !== undefined ? { hsCode } : {}) } });
     await audit(tx, staffAudit(actor, { action: "category.created", summary: `Added the category ${name}`, targetType: "Category", targetId: c.id, ipAddress: ip }));
     return c;
   });
@@ -106,14 +110,14 @@ export async function createCategory(db: PrismaClient, actor: StaffActor, input:
 
 export async function updateCategory(db: PrismaClient, actor: StaffActor, id: string, input: CategoryInput, ip?: string | null): Promise<Category> {
   assertStaffCan(actor, "manageCatalogue");
-  const { name, slug, description } = checkCategory(input);
+  const { name, slug, description, hsCode } = checkCategory(input);
   const result = await db.$transaction(async (tx) => {
     const before = await tx.category.findUnique({ where: { id } });
     if (!before) throw new DomainError("not-found", "No such category.");
     await checkPlacement(tx, id, input.parentId);
     await checkSlug(tx, slug, id);
     if (input.parentId && input.parentId !== before.parentId) await checkKeysFit(tx, id, input.parentId);
-    const after = await tx.category.update({ where: { id }, data: { name, slug, description, parentId: input.parentId, sortOrder: input.sortOrder, active: input.active, sourcingRule: input.sourcingRule } });
+    const after = await tx.category.update({ where: { id }, data: { name, slug, description, parentId: input.parentId, sortOrder: input.sortOrder, active: input.active, sourcingRule: input.sourcingRule, ...(hsCode !== undefined ? { hsCode } : {}) } });
     const changes: string[] = [];
     if (before.name !== name) changes.push(`name to ${name}`);
     if (before.slug !== slug) changes.push(`address to /categories/${slug}`);

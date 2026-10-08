@@ -61,8 +61,10 @@ Only an Admin changes the rules.
   **Mark as sent**.
 
 The purchase order and its PDF show what we buy, the supplier's price,
-**Deliver to** and **Payment terms** from the rules. Never the customer,
-our order number or our selling price.
+**Deliver to** (the default warehouse's address, else the one in the rules)
+and **Payment terms** from the rules. Never our order number or our
+selling price, and never the customer, unless the purchase order is
+drop-shipped ([logistics.md](logistics.md)).
 
 ## The supplier's page
 
@@ -81,7 +83,8 @@ purchase order's admin page.
 
 ## Afterwards
 
-- **Mark as received** when the goods are in our hands.
+- **Mark as received** when the goods are in our hands. They go into the
+  warehouse, kept for the order ([logistics.md](logistics.md)).
 - **Cancel** a purchase order with a reason; a supplier who already had it
   is emailed. A shipped or received one can't be cancelled.
 - **Cancelling the order** cancels its purchase orders not yet with a

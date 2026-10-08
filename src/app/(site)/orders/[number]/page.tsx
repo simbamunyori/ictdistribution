@@ -5,16 +5,21 @@ import { OrderView } from "@/components/shop/order-view";
 import { SiteFrame } from "@/components/site/site-frame";
 import { Alert } from "@/components/ui/alert";
 import { prisma } from "@/server/db";
-import { orderByToken, orderForCustomer } from "@/server/shop/orders";
-import { shopper } from "@/server/shop/viewer";
+import { orderLogistics } from "@/server/logistics/tracking";
+import { shopper, viewableOrder } from "@/server/shop/viewer";
 
 export const metadata: Metadata = { title: "Your order", robots: { index: false }, referrer: "no-referrer" };
 
 /** An order, for whoever holds the link from its email, or the signed-in customer it belongs to. */
 export default async function OrderPage({ params, searchParams }: { params: Promise<{ number: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const [{ number }, q, s] = await Promise.all([params, searchParams, shopper()]);
-  const order = (q.t ? await orderByToken(prisma, number, q.t) : null) ?? (s.user ? await orderForCustomer(prisma, number, { userId: s.user.id, organisationId: s.organisation?.id ?? null }) : null);
-  if (!order) notFound();
+  const seen = await viewableOrder(number, q.t ?? "");
+  if (!seen) notFound();
+  const { order } = seen;
+  const logistics = await orderLogistics(prisma, order.id);
+  const base = `/orders/${encodeURIComponent(order.number)}`;
+  const t = seen.byLink && q.t ? `?t=${encodeURIComponent(q.t)}` : "";
+  const sent = logistics.deliveries.some((d) => d.status !== "PREPARED") || order.status === "FULFILLED";
   return (
     <SiteFrame>
       <div className="mx-auto max-w-4xl px-4 py-10 md:px-6">
@@ -25,7 +30,12 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         ) : null}
         <h1 className="text-title font-bold">Order {order.number}</h1>
         <div className="mt-6">
-          <OrderView order={order} proFormaHref={`/orders/${encodeURIComponent(order.number)}/pro-forma${q.t ? `?t=${encodeURIComponent(q.t)}` : ""}`} />
+          <OrderView
+            order={order}
+            proFormaHref={`${base}/pro-forma${t}`}
+            logistics={{ ...logistics, deliveries: logistics.deliveries.filter((d) => d.status !== "PREPARED") }}
+            links={{ note: (n) => `${base}/deliveries/${encodeURIComponent(n)}/note${t}`, pod: (n) => `${base}/deliveries/${encodeURIComponent(n)}/pod${t}`, commercialInvoice: sent && order.fulfilment === "DELIVERY" ? `${base}/commercial-invoice${t}` : undefined }}
+          />
         </div>
         <p className="mt-8 text-callout text-ink-muted">
           Questions about this order? Contact us and quote {order.number}.

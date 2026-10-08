@@ -34,7 +34,7 @@ export interface OfferForChoice {
 
 export interface RankedOffer<O extends OfferForChoice> {
   offer: O;
-  /** Cost plus the supplier's landed cost allowance, in the base currency. Null when it can't be worked out. */
+  /** Cost plus freight, insurance, duty and clearing (or the supplier's allowance when those can't be estimated), in the base currency. Null when it can't be worked out. */
   landed: Money | null;
   leadTimeDays: number;
   /** Why it can't be chosen, when it can't. */
@@ -54,14 +54,24 @@ export function resolveRule(...rules: (SourcingRule | null | undefined)[]): Sour
   return "CHEAPEST_LANDED";
 }
 
-export function chooseOffer<O extends OfferForChoice>(offers: O[], rule: SourcingRule, base: string, rates: (currency: string) => Rate | null): Choice<O> {
+/**
+ * Freight, insurance, duty and clearing for one unit from an offer, in the
+ * base currency, given its cost in the base currency. Null when they can't
+ * be estimated, and the supplier's landed cost allowance is used instead.
+ */
+export type LandedAdd<O> = (offer: O, costBase: bigint) => bigint | null;
+
+export function chooseOffer<O extends OfferForChoice>(offers: O[], rule: SourcingRule, base: string, rates: (currency: string) => Rate | null, landedAdd?: LandedAdd<O>): Choice<O> {
   const ranked: RankedOffer<O>[] = offers.map((offer) => {
     const leadTimeDays = offer.leadTimeDays ?? offer.supplier.leadTimeDays;
     let landed: Money | null = null;
     if (offer.costMinor > 0n) {
       const rate = offer.currency === base ? null : rates(offer.currency);
-      const cost = { amountMinor: offer.costMinor + applyBps(offer.costMinor, offer.supplier.landedCostBps), currency: offer.currency };
-      if (offer.currency === base || rate) landed = toBase(cost, base, rate);
+      if (offer.currency === base || rate) {
+        const costBase = toBase({ amountMinor: offer.costMinor, currency: offer.currency }, base, rate).amountMinor;
+        const add = landedAdd?.(offer, costBase) ?? null;
+        landed = add !== null ? { amountMinor: costBase + add, currency: base } : toBase({ amountMinor: offer.costMinor + applyBps(offer.costMinor, offer.supplier.landedCostBps), currency: offer.currency }, base, rate);
+      }
     }
     let unavailable: string | undefined;
     if (!offer.supplier.active) unavailable = "Supplier switched off";
