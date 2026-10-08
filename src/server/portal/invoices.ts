@@ -74,10 +74,15 @@ export async function issueInvoice(tx: Prisma.TransactionClient, key: string, or
 
 // ─── Reading ─────────────────────────────────────────────────────────
 
-export async function invoiceByToken(db: Pick<PrismaClient, "invoice">, number: string, token: string): Promise<FullInvoice | null> {
+/** The invoice for the link in its email, or in a reminder about it. */
+export async function invoiceByToken(db: Pick<PrismaClient, "invoice" | "invoiceReminder">, number: string, token: string): Promise<FullInvoice | null> {
   if (!token) return null;
+  const hash = hashToken(token);
   const inv = await db.invoice.findUnique({ where: { number }, include: INVOICE_INCLUDE });
-  return inv && inv.accessTokenHash === hashToken(token) ? inv : null;
+  if (!inv) return null;
+  if (inv.accessTokenHash === hash) return inv;
+  const reminder = await db.invoiceReminder.findUnique({ where: { accessTokenHash: hash }, select: { invoiceId: true } });
+  return reminder?.invoiceId === inv.id ? inv : null;
 }
 
 export async function invoiceForViewer(db: Pick<PrismaClient, "invoice">, number: string, v: Pick<PortalViewer, "userId" | "organisationId">): Promise<FullInvoice | null> {

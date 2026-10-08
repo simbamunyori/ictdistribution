@@ -41,9 +41,9 @@ function summarise(label: string, quotes: Row[]): WinRow {
   };
 }
 
-export async function quoteReport(db: PrismaClient, since: Date) {
+export async function quoteReport(db: PrismaClient, since: Date, until = new Date()) {
   const quotes = await db.quote.findMany({
-    where: { createdAt: { gte: since }, status: { not: "CANCELLED" } },
+    where: { createdAt: { gte: since, lte: until }, status: { not: "CANCELLED" } },
     select: { type: true, status: true, createdAt: true, sentAt: true, sentByLabel: true, lines: { select: { categoryId: true } } },
   });
   const categories = await db.category.findMany({ select: { id: true, name: true, parentId: true, parent: { select: { name: true } } } });

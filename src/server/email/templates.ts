@@ -158,6 +158,16 @@ export const TEMPLATES: Record<string, Template> = {
       footnote: "Keep this email: its link opens the invoice without signing in. Signed-in customers find every invoice in their account.",
     },
   }),
+  "invoice.reminder": (p, ctx) => ({
+    subject: str(p.overdue) ? `Invoice ${str(p.number)} is overdue` : `Invoice ${str(p.number)} is due`,
+    body: {
+      heading: str(p.overdue) ? "A reminder: this invoice is overdue" : "A reminder about this invoice",
+      paragraphs: [`Invoice ${str(p.number)} for order ${str(p.order)} was due on ${str(p.due)}. ${str(p.outstanding)} is still to pay.`, `Please pay by bank transfer with ${str(p.order)} as the reference. If you have paid in the last few days, thank you, and please ignore this email.`],
+      ...(str(p.bankDetails) ? { box: { title: "Pay into", text: `${str(p.bankDetails)}\nReference: ${str(p.order)}` } } : {}),
+      button: { label: "Download the invoice", url: `${ctx.appUrl}/invoices/${encodeURIComponent(str(p.number))}?t=${encodeURIComponent(str(p.token))}` },
+      footnote: "If something on the invoice is wrong, reply to this email and we will put it right.",
+    },
+  }),
   "return.requested": (p, ctx) => ({
     subject: `Return ${str(p.number)} received`,
     body: {

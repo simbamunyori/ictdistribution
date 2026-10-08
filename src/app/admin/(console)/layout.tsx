@@ -59,6 +59,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       : []),
     ...(canCustomers ? [{ href: "/admin/customers", label: "Customers", badge: checks || undefined }] : []),
     ...(canCredit ? [{ href: "/admin/credit", label: "Credit", badge: applications || undefined }] : []),
+    ...(staffCan({ staffRole: role }, "manageFinance") ? [{ href: "/admin/finance", label: "Finance" }] : []),
+    ...(staffCan({ staffRole: role }, "viewReports") ? [{ href: "/admin/reports", label: "Reports" }] : []),
     { href: "/admin/products", label: "Products" },
     { href: "/admin/categories", label: "Categories" },
     { href: "/admin/specials", label: "Specials" },

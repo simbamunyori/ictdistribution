@@ -37,7 +37,8 @@ const ORDER: Record<StatementItem["kind"], number> = { invoice: 0, credit: 1, pa
 
 /** Debits before credits on the same day, so a balance never dips below zero for a moment. */
 function byDate(a: StatementItem, b: StatementItem) {
-  return a.date.getTime() - b.date.getTime() || ORDER[a.kind] - ORDER[b.kind] || a.reference.localeCompare(b.reference);
+  // Payments carry a date only, so compare whole days, then debits first, then the time.
+  return Math.floor(a.date.getTime() / DAY) - Math.floor(b.date.getTime() / DAY) || ORDER[a.kind] - ORDER[b.kind] || a.date.getTime() - b.date.getTime() || a.reference.localeCompare(b.reference);
 }
 
 export const isDebit = (i: Pick<StatementItem, "kind">) => i.kind === "invoice" || i.kind === "refund";
