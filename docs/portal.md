@@ -78,7 +78,8 @@ Staff answer at `/admin/returns`, counted in the admin menu:
    saying why.
 2. **Mark received** when the items are back. An item that can be sold
    again is counted into stock on the Stock page.
-3. **Settle**, saying how: refunded, replaced or repaired.
+3. **Settle**: repair, replace or credit it, or settle it another way.
+   See [aftersales.md](aftersales.md).
 
 A customer can withdraw a request until it is answered.
 

@@ -8,6 +8,7 @@ import { hashToken, newToken } from "@/server/auth/tokens";
 import { sheet } from "@/server/documents/pdf-kit";
 import { queueEmail } from "@/server/email/outbox";
 import { PAYMENT_LABEL } from "@/server/shop/orders";
+import { orderMoney } from "@/server/aftersales/credit-notes";
 import { inScope, scopeWhere, type PortalViewer } from "./scope";
 
 /**
@@ -19,7 +20,8 @@ import { inScope, scopeWhere, type PortalViewer } from "./scope";
  */
 
 export const INVOICE_INCLUDE = {
-  order: { include: { lines: { orderBy: { sortOrder: "asc" } }, payments: { orderBy: { receivedOn: "asc" } }, market: true } },
+  order: { include: { lines: { orderBy: { sortOrder: "asc" } }, payments: { orderBy: { receivedOn: "asc" } }, refunds: { orderBy: { paidOn: "asc" } }, market: true } },
+  creditNotes: { orderBy: { issuedAt: "asc" } },
 } satisfies Prisma.InvoiceInclude;
 
 export type FullInvoice = Prisma.InvoiceGetPayload<{ include: typeof INVOICE_INCLUDE }>;
@@ -83,7 +85,6 @@ export async function invoiceForViewer(db: Pick<PrismaClient, "invoice">, number
   return inv && inScope(v, inv) ? inv : null;
 }
 
-const paidOn = (o: { payments: { amountMinor: bigint }[] }) => o.payments.reduce((s, p) => s + p.amountMinor, 0n);
 
 /** The viewer's invoices, newest first, with what is paid and still owed on each. */
 export async function customerInvoices(db: Pick<PrismaClient, "invoice">, v: Pick<PortalViewer, "userId" | "organisationId">, now = new Date(), filter: { open?: boolean } = {}) {
@@ -91,12 +92,11 @@ export async function customerInvoices(db: Pick<PrismaClient, "invoice">, v: Pic
     where: scopeWhere(v),
     orderBy: { issuedAt: "desc" },
     take: 500,
-    include: { order: { select: { number: true, customerReference: true, userId: true, payments: { select: { amountMinor: true } }, market: { select: { locale: true, timeZone: true } } } } },
+    include: { order: { select: { number: true, customerReference: true, userId: true, payments: { select: { amountMinor: true } }, refunds: { select: { amountMinor: true } }, market: { select: { locale: true, timeZone: true } } } }, creditNotes: { select: { number: true, totalMinor: true } } },
   });
   const all = rows.map((r) => {
-    const paid = paidOn(r.order);
-    const outstanding = r.totalMinor > paid ? r.totalMinor - paid : 0n;
-    return { ...r, paid, outstanding, state: invoiceState(r.totalMinor, paid, r.dueAt, now) };
+    const m = orderMoney(r.totalMinor, r.order.payments, r.creditNotes, r.order.refunds);
+    return { ...r, paid: m.settled, credited: m.credited, outstanding: m.outstanding, state: invoiceState(m.due, m.settled, r.dueAt, now) };
   });
   return filter.open ? all.filter((r) => r.state !== "PAID") : all;
 }
@@ -110,8 +110,8 @@ export async function invoicePdf(inv: FullInvoice, ctx: { appUrl: string; legalN
   const s = await sheet("Tax invoice", inv.number);
   const money = (n: bigint) => formatMoney({ amountMinor: n, currency: inv.currency }, locale);
   const date = (d: Date) => formatDate(d, locale, timeZone);
-  const paid = paidOn(o);
-  const state = invoiceState(inv.totalMinor, paid, inv.dueAt, ctx.now ?? new Date());
+  const m = orderMoney(inv.totalMinor, o.payments, inv.creditNotes, o.refunds);
+  const state = invoiceState(m.due, m.settled, inv.dueAt, ctx.now ?? new Date());
   s.heading([ctx.legalName, o.market.taxNumber ? `${o.taxName} number ${o.market.taxNumber}` : "", company.domain, o.market.supportEmail ?? ""], [`Date: ${date(inv.issuedAt)}`, `Due: ${date(inv.dueAt)}`, `Order: ${o.number}`, `Payment: ${PAYMENT_LABEL[o.paymentMethod]}`]);
   const [first, ...rest] = inv.billTo.split("\n");
   s.party("Bill to", first ?? "", [rest.join(", "), [inv.taxNumber ? `Tax number ${inv.taxNumber}` : "", o.customerReference ? `Your reference: ${o.customerReference}` : ""].filter(Boolean).join(". "), o.pricesIncludeTax ? `Prices in ${inv.currency}, including ${o.taxName}.` : `Prices in ${inv.currency}, per unit before ${o.taxName}.`]);
@@ -130,10 +130,12 @@ export async function invoicePdf(inv: FullInvoice, ctx: { appUrl: string; legalN
           ["Total", money(inv.totalMinor)],
         ],
   );
+  if (inv.creditNotes.length) s.block("Credited", inv.creditNotes.map((c) => `${date(c.issuedAt)}: ${money(c.totalMinor)}, credit note ${c.number}`).join("\n"));
   if (o.payments.length) s.block("Received", o.payments.map((p) => `${date(p.receivedOn)}: ${money(p.amountMinor)}${p.reference ? `, ${p.reference}` : ""}`).join("\n"));
-  if (state === "PAID") s.block("Paid", "Paid in full. Thank you.");
+  if (o.refunds.length) s.block("Paid back to you", o.refunds.map((r) => `${date(r.paidOn)}: ${money(r.amountMinor)}${r.reference ? `, ${r.reference}` : ""}`).join("\n"));
+  if (state === "PAID") s.block("Paid", m.overpaid ? `Paid in full. We owe you ${money(m.overpaid)}, which we pay back.` : "Paid in full. Thank you.");
   else {
-    s.block(state === "OVERDUE" ? "Overdue" : "To pay", `${money(inv.totalMinor - paid)} by ${date(inv.dueAt)}.`);
+    s.block(state === "OVERDUE" ? "Overdue" : "To pay", `${money(m.outstanding)} by ${date(inv.dueAt)}.`);
     if (o.bankDetails) s.block("Pay into", `${o.bankDetails}\nReference: ${o.number}`);
   }
   s.button("See the order online", `${ctx.appUrl}/orders/${encodeURIComponent(o.number)}`);

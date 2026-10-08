@@ -22,6 +22,10 @@ import { pricingSettings } from "@/server/pricing/rates";
 import { PO_STATUS_LABEL, PO_STATUS_TONE } from "@/server/procurement/common";
 import { ORDER_STATUS_LABEL, TO_SEND } from "@/server/shop/orders";
 import { staffCan } from "@/server/staff/access";
+import { recordRefundAction, setSerialsAction } from "@/app/admin/(console)/aftersales-actions";
+import { orderMoney } from "@/server/aftersales/credit-notes";
+import { UNIT_STATUS_LABEL } from "@/server/aftersales/units";
+import { WARRANTY_STATE_LABEL, warrantyState } from "@/lib/warranty";
 
 export const metadata: Metadata = { title: "Order" };
 
@@ -43,6 +47,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       purchaseOrders: { orderBy: { createdAt: "asc" }, include: { supplier: { select: { name: true } } } },
       invoice: { select: { number: true } },
       returns: { orderBy: { createdAt: "desc" }, select: { id: true, number: true, status: true, reason: true, createdAt: true } },
+      units: { orderBy: { serial: "asc" }, select: { id: true, serial: true, orderLineId: true, source: true, status: true, startsAt: true, endsAt: true, warrantyMonths: true } },
+      creditNotes: { orderBy: { issuedAt: "asc" }, include: { request: { select: { id: true, number: true } } } },
+      refunds: { orderBy: { paidOn: "asc" } },
     },
   });
   if (!order) notFound();
@@ -51,8 +58,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const packable = (TO_SEND.includes(order.status) || order.status === "FULFILLED") && toDeliver.some((l) => l.toDeliver > 0);
   const { locale, timeZone } = order.market;
   const money = (amountMinor: bigint, currency = order.currency) => formatMoney({ amountMinor, currency }, locale);
-  const paid = order.payments.reduce((s, p) => s + p.amountMinor, 0n);
-  const owing = order.totalMinor - paid > 0n ? order.totalMinor - paid : 0n;
+  const m = orderMoney(order.totalMinor, order.payments, order.creditNotes, order.refunds);
+  const owing = m.outstanding;
+  const now = new Date();
   const showCost = staffCan(role, "viewSuppliers");
   const base = showCost ? (await pricingSettings(prisma)).baseCurrency : "";
   const cost = order.lines.reduce((s, l) => (l.unitCostBaseMinor === null ? s : s + l.unitCostBaseMinor * BigInt(l.quantity)), 0n);
@@ -238,6 +246,79 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           </Card>
         ) : null}
 
+        {order.status !== "CANCELLED" && order.lines.length && (staffCan(role, "recordSerials") || order.units.length) ? (
+          <Card>
+            <h2 className="text-headline font-bold">Serial numbers and warranty</h2>
+            <p className="mt-1 text-callout text-ink-muted">Serials from a supplier&apos;s shipping notice appear by themselves. Type the rest, one per line. Each unit&apos;s warranty starts the day it leaves us.</p>
+            <div className="mt-4 flex flex-col gap-6">
+              {order.lines.map((l) => {
+                const units = order.units.filter((u) => u.orderLineId === l.id);
+                const fromSupplier = units.filter((u) => u.source === "supplier");
+                return (
+                  <div key={l.id} className="border-t border-line pt-4 first:border-0 first:pt-0">
+                    <p className="font-semibold">
+                      {l.quantity} x {l.description}
+                    </p>
+                    {units.length ? (
+                      <ul className="mt-1 mb-3 text-callout">
+                        {units.map((u) => {
+                          const w = warrantyState(u, now);
+                          return (
+                            <li key={u.id}>
+                              <span className="font-mono">{u.serial}</span>
+                              <span className="text-ink-muted">
+                                {u.source === "supplier" ? ", from the supplier" : u.source === "replacement" ? ", a replacement" : ""}, {u.status !== "WITH_CUSTOMER" ? UNIT_STATUS_LABEL[u.status].toLowerCase() : w === "IN_WARRANTY" && u.endsAt ? `warranty until ${formatDate(u.endsAt, locale, timeZone)}` : WARRANTY_STATE_LABEL[w].toLowerCase()}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : null}
+                    {staffCan(role, "recordSerials") ? <SpecForm action={setSerialsAction} hidden={{ lineId: l.id, orderId: order.id }} idPrefix={`serials-${l.id}-`} columns={1} fields={[{ kind: "textarea", id: "serials", label: `Serial numbers typed for ${l.description}`, defaultValue: l.serials, rows: Math.min(6, Math.max(2, l.quantity)), hint: fromSupplier.length ? `${fromSupplier.length} more from the supplier.` : undefined }]} submitLabel="Save serial numbers" pendingLabel="Saving" variant="secondary" /> : null}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        ) : null}
+
+        {order.creditNotes.length || order.refunds.length ? (
+          <Card>
+            <h2 className="text-headline font-bold">Credit notes and refunds</h2>
+            <ul className="mt-3 flex flex-col gap-1 text-callout">
+              {order.creditNotes.map((c) => (
+                <li key={c.id}>
+                  <a href={`/admin/credit-notes/${encodeURIComponent(c.number)}`} className="font-semibold text-link underline underline-offset-4">
+                    {c.number}
+                  </a>
+                  , {money(c.totalMinor)} credited {formatDate(c.issuedAt, locale, timeZone)} by {c.issuedByLabel}
+                  {c.request ? (
+                    <>
+                      {" "}
+                      for return{" "}
+                      <Link href={`/admin/returns/${c.request.id}`} className="text-link underline underline-offset-4">
+                        {c.request.number}
+                      </Link>
+                    </>
+                  ) : null}
+                </li>
+              ))}
+              {order.refunds.map((r) => (
+                <li key={r.id}>
+                  Refund of {money(r.amountMinor)} paid {formatDate(r.paidOn, locale, "UTC")}
+                  {r.reference ? `, ${r.reference}` : ""}, recorded by {r.recordedByLabel}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-callout">{m.overpaid ? `We owe the customer ${money(m.overpaid)}.` : m.outstanding ? `${money(m.outstanding)} still to pay after credits.` : "Nothing owed either way."}</p>
+            {m.overpaid && staffCan(role, "issueCreditNotes") ? (
+              <div className="mt-4">
+                <SpecForm action={recordRefundAction} hidden={{ orderId: order.id }} idPrefix="refund-" columns={3} fields={[{ kind: "text", id: "amount", label: `Paid back (${order.currency})`, inputMode: "decimal", defaultValue: toPlainAmount({ amountMinor: m.overpaid, currency: order.currency }) }, { kind: "text", id: "paidOn", label: "Paid on", type: "date", defaultValue: today }, { kind: "text", id: "reference", label: "Reference" }]} submitLabel="Record refund" pendingLabel="Saving" />
+              </div>
+            ) : null}
+          </Card>
+        ) : null}
+
         {order.payments.length ? (
           <Card>
             <h2 className="text-headline font-bold">Payments received</h2>
@@ -278,7 +359,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         {open && staffCan(role, "cancelOrders") ? (
           <Card>
             <h2 className="mb-4 text-headline font-bold">Cancel the order</h2>
-            <CancelOrderForm orderId={order.id} paid={paid > 0n} />
+            <CancelOrderForm orderId={order.id} paid={m.paid > 0n} />
           </Card>
         ) : null}
       </div>

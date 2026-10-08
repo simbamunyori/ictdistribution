@@ -198,6 +198,48 @@ export const TEMPLATES: Record<string, Template> = {
       button: { label: "See the return", url: `${ctx.appUrl}/account/returns/${encodeURIComponent(str(p.number))}` },
     },
   }),
+  "return.repairing": (p, ctx) => ({
+    subject: `Return ${str(p.number)} is being repaired`,
+    body: {
+      heading: "We are repairing it",
+      paragraphs: [`The items in return ${str(p.number)} for order ${str(p.order)} are being repaired. We email you when they are on their way back.`, ...(str(p.note) ? [str(p.note)] : [])],
+      button: { label: "See the return", url: `${ctx.appUrl}/account/returns/${encodeURIComponent(str(p.number))}` },
+    },
+  }),
+  "return.sent-back": (p, ctx) => ({
+    subject: `Return ${str(p.number)} is on its way back`,
+    body: {
+      heading: "It is on its way back to you",
+      paragraphs: [`We have repaired the items in return ${str(p.number)} for order ${str(p.order)} and sent them back${str(p.carrier) ? ` with ${str(p.carrier)}` : ""}.`, ...(str(p.reference) ? [`Tracking number: ${str(p.reference)}.`] : []), ...(str(p.note) ? [str(p.note)] : [])],
+      button: { label: "See the return", url: `${ctx.appUrl}/account/returns/${encodeURIComponent(str(p.number))}` },
+    },
+  }),
+  "return.replaced": (p, ctx) => ({
+    subject: `Your replacement for return ${str(p.number)}`,
+    body: {
+      heading: "Your replacement is on its way",
+      paragraphs: [`We have sent a replacement for the items in return ${str(p.number)} for order ${str(p.order)}${str(p.carrier) ? ` with ${str(p.carrier)}` : ""}. It keeps the warranty of the item it replaces.`, ...(str(p.reference) ? [`Tracking number: ${str(p.reference)}.`] : []), ...(str(p.note) ? [str(p.note)] : [])],
+      list: str(p.serials).split("\n").filter(Boolean),
+      button: { label: "See the return", url: `${ctx.appUrl}/account/returns/${encodeURIComponent(str(p.number))}` },
+    },
+  }),
+  "creditnote.issued": (p, ctx) => ({
+    subject: `Credit note ${str(p.number)} for order ${str(p.order)}`,
+    body: {
+      heading: "Your credit note",
+      paragraphs: [`Here is credit note ${str(p.number)} for ${str(p.total)}, against invoice ${str(p.invoice)} for order ${str(p.order)}.`, str(p.refund) ? `You had already paid, so we owe you ${str(p.refund)}. We pay it back and email you when we do.` : str(p.outstanding) ? `${str(p.outstanding)} is still to pay on the order.` : "Nothing more is owed on the order."],
+      button: { label: "Download the credit note", url: `${ctx.appUrl}/credit-notes/${encodeURIComponent(str(p.number))}?t=${encodeURIComponent(str(p.token))}` },
+      footnote: "Keep this email: its link opens the credit note without signing in. Signed-in customers find every credit note in their account.",
+    },
+  }),
+  "refund.paid": (p, ctx) => ({
+    subject: `We have paid back ${str(p.amount)} for order ${str(p.order)}`,
+    body: {
+      heading: "Your refund is paid",
+      paragraphs: [`We paid ${str(p.amount)} back to you on ${str(p.paidOn)} for order ${str(p.order)}${str(p.reference) ? `, reference ${str(p.reference)}` : ""}.`, "It can take a few days to show in your account, depending on your bank."],
+      button: { label: "See your payments", url: `${ctx.appUrl}/account/payments` },
+    },
+  }),
   "quote.received": (p, ctx) => ({
     subject: `We have your request for quote ${str(p.number)}`,
     body: {

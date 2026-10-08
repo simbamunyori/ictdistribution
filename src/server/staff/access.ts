@@ -44,7 +44,9 @@ export const STAFF_PERMISSIONS = {
   manageLogisticsRules: "Change duty rules and how freight is estimated",
   manageStock: "Add warehouses, receive and count stock",
   manageDeliveries: "Prepare deliveries, dispatch them and record proof of delivery",
-  manageReturns: "Approve or decline customers' returns, receive the items and settle them",
+  manageReturns: "Approve or decline customers' returns, receive the items, repair or replace them and settle them",
+  recordSerials: "Record the serial numbers of items sold, which start their warranty",
+  issueCreditNotes: "Issue credit notes for returned items and record refunds paid",
   manageStaff: "Invite staff, change their role and deactivate them",
   viewAudit: "Read the full audit log",
 } as const;
@@ -83,6 +85,8 @@ const ALLOWED: Record<StaffPermission, StaffRole[]> = {
   manageStock: ["ADMIN", "LOGISTICS"],
   manageDeliveries: ["ADMIN", "SALES", "LOGISTICS"],
   manageReturns: ["ADMIN", "SALES", "LOGISTICS", "SUPPORT"],
+  recordSerials: ["ADMIN", "SALES", "LOGISTICS", "SUPPORT"],
+  issueCreditNotes: ["ADMIN", "FINANCE"],
   manageStaff: ["ADMIN"],
   viewAudit: ["ADMIN", "FINANCE"],
 };

@@ -8,6 +8,7 @@ import { advanceLines, poLineIds } from "@/server/logistics/tracking";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 import { DOCUMENT_KIND_LABEL, procurementAddresses, procurementSettings } from "./common";
 import { deliverToFor, type PoDeps } from "./purchase-orders";
+import { syncUnits } from "@/server/aftersales/units";
 
 /**
  * The supplier's side of a purchase order, on the page their link opens
@@ -139,6 +140,8 @@ export async function shipPurchaseOrder(db: PrismaClient, deps: PoDeps, who: PoA
     }
     if (Object.keys(errors).length) throw new DomainError("invalid", "Check the highlighted fields.", undefined, errors);
     for (const [id, list] of serials) await tx.purchaseOrderLine.update({ where: { id }, data: { serials: list.join("\n") } });
+    const orders = await tx.orderLine.findMany({ where: { poLines: { some: { purchaseOrderId: po.id } } }, distinct: ["orderId"], select: { orderId: true } });
+    for (const o of orders) await syncUnits(tx, o.orderId);
     await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: "SHIPPED", shippedAt: shipped, shippingReference, confirmedAt: po.confirmedAt ?? now, sentAt: po.sentAt ?? now } });
     await advanceLines(tx, await poLineIds(tx, [po.id]), "SHIPPED", "actor" in who ? who.actor.name : po.supplier.name, shippingReference ? `Waybill ${shippingReference}` : "", shipped ?? now);
     const count = [...serials.values()].reduce((s, l) => s + l.length, 0);

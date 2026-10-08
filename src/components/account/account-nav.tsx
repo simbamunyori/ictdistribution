@@ -20,6 +20,7 @@ export function AccountNav({ organisation, accounts }: { organisation: boolean; 
         ]
       : []),
     { href: "/account/deliveries", label: "Deliveries" },
+    { href: "/account/warranty", label: "Warranty" },
     { href: "/account/returns", label: "Returns" },
     { href: "/account/lists", label: "Saved lists" },
     ...(organisation
