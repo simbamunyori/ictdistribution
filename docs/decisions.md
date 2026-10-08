@@ -284,6 +284,9 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
 - **Reports are for Admin, Sales and Finance; chasing, exports and
   finance settings for Admin and Finance.** Supplier names in reports are
   staff only, as everywhere.
+- **Statement lines are ordered by day, then debits first.** Payments
+  carry a date only, so an invoice issued later the same day now comes
+  before its payment instead of after it (a fix to D8).
 
 ## D11
 
