@@ -1,3 +1,4 @@
+import { company } from "@/config/app";
 import type { EmailBody } from "./layout";
 
 /**
@@ -76,7 +77,7 @@ export const TEMPLATES: Record<string, Template> = {
         list: str(p.lines).split("\n").filter(Boolean),
         ...(bank || account ? { box: { title: "Pay into", text: `${str(p.bankDetails)}\nReference: ${str(p.number)}` } } : {}),
         button: { label: "See your order", url: `${ctx.appUrl}/orders/${encodeURIComponent(str(p.number))}?t=${encodeURIComponent(str(p.token))}` },
-        footnote: "Keep this email: the button shows your order without signing in.",
+        footnote: `${str(p.quote) ? `It is made from your quote ${str(p.quote)}. ` : ""}The pro forma invoice: ${ctx.appUrl}/orders/${encodeURIComponent(str(p.number))}/pro-forma?t=${encodeURIComponent(str(p.token))}. Keep this email: its links show your order without signing in.`,
       },
     };
   },
@@ -174,13 +175,6 @@ export const TEMPLATES: Record<string, Template> = {
       },
     };
   },
-  "quote.accepted": (p) => ({
-    subject: `Quote ${str(p.number)} accepted`,
-    body: {
-      heading: "Thank you for your order",
-      paragraphs: [`You accepted quote ${str(p.number)} for ${str(p.total)}.`, "We will send you a pro forma invoice and confirm delivery. Reply to this email with any questions."],
-    },
-  }),
   "quote.cancelled": (p) => ({
     subject: `Quote ${str(p.number)} withdrawn`,
     body: {
@@ -192,7 +186,7 @@ export const TEMPLATES: Record<string, Template> = {
     subject: `Quote ${str(p.number)} ${str(p.outcome)} by ${str(p.customer)}`,
     body: {
       heading: `Quote ${str(p.outcome)}`,
-      paragraphs: [`${str(p.customer)} ${str(p.outcome)} quote ${str(p.number)} for ${str(p.total)}.`, ...(str(p.reason) ? [`Their reason: ${str(p.reason)}`] : [])],
+      paragraphs: [`${str(p.customer)} ${str(p.outcome)} quote ${str(p.number)} for ${str(p.total)}.`, ...(str(p.order) ? [`It is now order ${str(p.order)}. Its purchase orders are made once it is paid or on account.`] : []), ...(str(p.reason) ? [`Their reason: ${str(p.reason)}`] : [])],
       button: { label: "Open the quote", url: `${ctx.appUrl}/admin/quotes/${encodeURIComponent(str(p.quoteId))}` },
     },
   }),
@@ -217,6 +211,46 @@ export const TEMPLATES: Record<string, Template> = {
       list: str(p.lines).split("\n").filter(Boolean),
       button: { label: "Give your prices", url: `${ctx.appUrl}/supplier/rfq/${encodeURIComponent(str(p.token))}` },
       footnote: "If you can't supply an item, say so on the page and we won't chase you for it.",
+    },
+  }),
+  "supplier.po": (p, ctx) => ({
+    subject: `Purchase order ${str(p.number)} from ${company.name}`,
+    replyTo: str(p.replyTo) || undefined,
+    body: {
+      heading: `Purchase order ${str(p.number)}`,
+      paragraphs: [`Hello ${str(p.supplier)}. Please supply the items below for ${str(p.total)}, before tax, and quote ${str(p.number)} on your invoice.`, "Use the button to confirm the order with your reference and ship date, then to tell us when it ships with the serial numbers, and to send your invoice and packing list."],
+      list: str(p.lines).split("\n").filter(Boolean),
+      ...(str(p.deliverTo) ? { box: { title: "Deliver to", text: str(p.deliverTo) } } : {}),
+      button: { label: "Confirm the order", url: `${ctx.appUrl}/supplier/po/${encodeURIComponent(str(p.token))}` },
+      footnote: `${str(p.paymentTerms) ? `Payment terms: ${str(p.paymentTerms)}. ` : ""}The purchase order as a PDF: ${ctx.appUrl}/supplier/po/${encodeURIComponent(str(p.token))}/pdf`,
+    },
+  }),
+  "supplier.po-cancelled": (p) => ({
+    subject: `Purchase order ${str(p.number)} cancelled`,
+    replyTo: str(p.replyTo) || undefined,
+    body: {
+      heading: `Purchase order ${str(p.number)} is cancelled`,
+      paragraphs: [`Hello ${str(p.supplier)}. Please don't supply purchase order ${str(p.number)}: ${str(p.reason)}.`, "If it has already left you, reply to this email and we will arrange it with you."],
+    },
+  }),
+  "po.to-approve": (p, ctx) => ({
+    subject: `Order ${str(p.order)} needs purchasing`,
+    body: {
+      heading: "Purchasing needs you",
+      paragraphs: [
+        ...(str(p.waiting) ? [`Purchase orders for order ${str(p.order)} need approving or sending on WhatsApp: ${str(p.waiting)}.`] : []),
+        ...(str(p.unassigned) ? [`These lines have no supplier, so buy them by hand:`] : []),
+      ],
+      list: str(p.unassigned).split("\n").filter(Boolean),
+      button: { label: "Open the order", url: `${ctx.appUrl}/admin/orders/${encodeURIComponent(str(p.orderId))}` },
+    },
+  }),
+  "po.updated": (p, ctx) => ({
+    subject: `${str(p.supplier)} updated purchase order ${str(p.number)}`,
+    body: {
+      heading: `Purchase order ${str(p.number)}`,
+      paragraphs: [`${str(p.supplier)} ${str(p.what)}.`],
+      button: { label: "Open the purchase order", url: `${ctx.appUrl}/admin/purchase-orders/${encodeURIComponent(str(p.poId))}` },
     },
   }),
 };

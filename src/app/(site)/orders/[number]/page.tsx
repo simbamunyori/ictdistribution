@@ -25,7 +25,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         ) : null}
         <h1 className="text-title font-bold">Order {order.number}</h1>
         <div className="mt-6">
-          <OrderView order={order} />
+          <OrderView order={order} proFormaHref={`/orders/${encodeURIComponent(order.number)}/pro-forma${q.t ? `?t=${encodeURIComponent(q.t)}` : ""}`} />
         </div>
         <p className="mt-8 text-callout text-ink-muted">
           Questions about this order? Contact us and quote {order.number}.

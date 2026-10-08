@@ -39,7 +39,7 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
     throw e;
   });
   if (!q) notFound();
-  const [categories, base] = await Promise.all([categoryOptions(prisma), pricingSettings(prisma).then((p) => p.baseCurrency)]);
+  const [categories, base, order] = await Promise.all([categoryOptions(prisma), pricingSettings(prisma).then((p) => p.baseCurrency), prisma.order.findUnique({ where: { quoteId: q.id }, select: { id: true, number: true } })]);
   const { locale, timeZone } = q.market;
   const money = (amountMinor: bigint | null, currency = q.currency) => (amountMinor === null ? "" : formatMoney({ amountMinor, currency }, locale));
   const showCost = staffCan(role, "viewSuppliers");
@@ -86,6 +86,15 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
             <p className="mt-3 text-callout whitespace-pre-line">{[`Tender ${q.tenderReference}`, q.tenderDeadline ? `Closes ${formatDateTime(q.tenderDeadline, locale, timeZone)}` : "", q.requiredDocuments ? `Documents asked for:\n${q.requiredDocuments}` : ""].filter(Boolean).join("\n")}</p>
           ) : null}
           {q.status === "DECLINED" ? <p className="mt-3 text-callout">Declined{q.declineReason ? `: ${q.declineReason}` : "."}</p> : null}
+          {order ? (
+            <p className="mt-3 text-callout">
+              Accepted as order{" "}
+              <Link href={`/admin/orders/${order.id}`} className="font-semibold text-link underline underline-offset-4">
+                {order.number}
+              </Link>
+              .
+            </p>
+          ) : null}
           {q.validUntil ? <p className="mt-3 text-callout">Valid until {formatDateTime(q.validUntil, locale, timeZone)}.</p> : null}
         </Card>
 
