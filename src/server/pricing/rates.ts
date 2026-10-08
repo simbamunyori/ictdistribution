@@ -114,6 +114,13 @@ export async function acceptRate(db: PrismaClient, actor: StaffActor, id: string
     await tx.exchangeRate.update({ where: { id }, data: { heldBack: null, acceptedById: actor.userId, acceptedAt: now, fetchedAt: now } });
     await audit(tx, staffAudit(actor, { action: "rate.accepted", summary: `Accepted ${row.base} to ${row.quote} at ${row.rate}`, targetType: "ExchangeRate", targetId: id, ipAddress: ip }));
   });
+  await refreshProductCosts(db);
+}
+
+/** Landed costs follow the rates in use. Loaded late: costs.ts reads rates too. */
+async function refreshProductCosts(db: PrismaClient) {
+  const { refreshCosts } = await import("@/server/shop/costs");
+  await refreshCosts(db);
 }
 
 /** A rate typed by staff, for when the source is off or wrong. Used at once. */
@@ -132,6 +139,7 @@ export async function setRate(db: PrismaClient, actor: StaffActor, quoteInput: s
     await tx.exchangeRate.create({ data: { base, quote, rate: text, source: "staff", publishedAt: now, fetchedAt: now, acceptedById: actor.userId, acceptedAt: now } });
     await audit(tx, staffAudit(actor, { action: "rate.set", summary: `Set ${base} to ${quote} at ${text} by hand`, targetType: "ExchangeRate", targetId: `${base}/${quote}`, ipAddress: ip }));
   });
+  await refreshProductCosts(db);
 }
 
 export async function updateRateRules(db: PrismaClient, actor: StaffActor, input: { holdPercent: number; maxAgeHours: number }, ip?: string | null) {

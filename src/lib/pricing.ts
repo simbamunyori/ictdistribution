@@ -78,3 +78,15 @@ export function convert(amount: Money, market: MarketConversion, rate: Rate | nu
 export function customerPrice(cost: Money, markupBps: number, market: MarketConversion, rate: Rate | null): Money {
   return convert({ amountMinor: withMarkup(cost.amountMinor, markupBps), currency: cost.currency }, market, rate);
 }
+
+/**
+ * A supplier's cost in our base currency, through the rate in use
+ * (1 base = rate other). Rounds up, so a cost is never understated.
+ */
+export function toBase(amount: Money, base: string, rate: Rate | null): Money {
+  if (amount.currency === base) return amount;
+  if (!rate) throw new Error(`No exchange rate from ${base} to ${amount.currency}.`);
+  const from = 10n ** BigInt(currencyInfo(amount.currency).exponent);
+  const to = 10n ** BigInt(currencyInfo(base).exponent);
+  return { amountMinor: divCeil(amount.amountMinor * rate.den * to, rate.num * from), currency: base };
+}

@@ -13,6 +13,11 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  experimental: {
+    // Product images and datasheets (up to 20 MB) and supplier price lists (up to 10 MB) are uploaded through forms.
+    serverActions: { bodySizeLimit: "21mb" },
+    proxyClientMaxBodySize: "21mb",
+  },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
