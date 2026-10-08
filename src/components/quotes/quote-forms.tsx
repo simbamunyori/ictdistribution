@@ -30,7 +30,7 @@ export interface TypeOption {
 }
 
 /** Asking for a quote: what for, the lines or a file, and the tender's details when it is one. */
-export function QuoteRequestForm({ types, marketName, canTender }: { types: TypeOption[]; marketName: string; canTender: boolean }) {
+export function QuoteRequestForm({ types, marketName, canTender, initialText = "" }: { types: TypeOption[]; marketName: string; canTender: boolean; initialText?: string }) {
   const [state, action, pending] = useActionState(requestQuoteAction, initial);
   const v = state.values ?? {};
   const err = state.fieldErrors ?? {};
@@ -61,7 +61,7 @@ export function QuoteRequestForm({ types, marketName, canTender }: { types: Type
         id="text"
         label="What do you need?"
         rows={8}
-        defaultValue={v.text ?? ""}
+        defaultValue={v.text ?? initialText}
         error={err.text}
         hint="One item per line with how many, like 5 x Dell P2425H monitor. Paste from an email or a spreadsheet if that is easier."
       />

@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient, SpecField } from "@prisma/client";
 import { cache } from "react";
+import { alternatives } from "@/lib/assistant";
 import { formatSpec, mpnKey, searchTerms, type SpecValue, type SpecValues } from "@/lib/catalogue";
 import { priceOf, usualPrice, volumeBreaksFor, volumeUnit, type PriceContext, type ShopPrice } from "@/server/shop/prices";
 import { specFieldsOf } from "./categories";
@@ -97,6 +98,11 @@ export const shopCategories = cache(async (db: Pick<PrismaClient, "category" | "
 
 // ─── Browsing and search ─────────────────────────────────────────────
 
+/** One search word as a product filter: it or another word for the same thing in the search text, or the part number. */
+export function termWhere(t: string): Prisma.ProductWhereInput {
+  return { OR: [...alternatives(t).map((a) => ({ searchText: { contains: a } })), ...(mpnKey(t).length >= 3 ? [{ mpnKey: { contains: mpnKey(t) } }] : [])] };
+}
+
 export type SortOrder = "relevance" | "name" | "newest" | "price";
 
 export interface BrowseParams {
@@ -138,7 +144,7 @@ export async function browse(db: Pick<PrismaClient, "category" | "product">, par
       AND: [
         IN_SHOP,
         ...(categoryIds ? [{ categoryId: { in: categoryIds } }] : []),
-        ...terms.map((t) => ({ OR: [{ searchText: { contains: t } }, ...(mpnKey(t).length >= 3 ? [{ mpnKey: { contains: mpnKey(t) } }] : [])] })),
+        ...terms.map(termWhere),
       ],
     },
     select: CARD_SELECT,
@@ -204,7 +210,7 @@ export async function browse(db: Pick<PrismaClient, "category" | "product">, par
   const sort = params.sort === "price" && !ctx ? "newest" : (params.sort ?? (terms.length ? "relevance" : "newest"));
   const score = (p: CardRow) => {
     const name = `${p.brand.name} ${p.name}`.toLowerCase();
-    return (terms.every((t) => name.includes(t)) ? 2 : 0) + (terms.some((t) => mpnKey(t) === mpnKey(p.mpn)) ? 4 : 0);
+    return (terms.every((t) => alternatives(t).some((a) => name.includes(a))) ? 2 : 0) + (terms.some((t) => mpnKey(t) === mpnKey(p.mpn)) ? 4 : 0);
   };
   // Lowest first; products without a shown price last.
   const prices = sort === "price" ? new Map(matches.map((p) => [p.id, priceRow(p, ctx)?.amount.amountMinor ?? null])) : null;
