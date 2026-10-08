@@ -54,7 +54,7 @@ export default async function Shop() {
         </Card>
         <Card>
           <h2 className="mb-4 text-headline font-bold">Home page and orders</h2>
-          <ShopSettingsForm readOnly={!canEdit} settings={{ heroTitle: settings.heroTitle, heroText: settings.heroText, payDays: String(settings.payDays), maxLineQuantity: String(settings.maxLineQuantity) }} />
+          <ShopSettingsForm readOnly={!canEdit} settings={{ heroTitle: settings.heroTitle, heroText: settings.heroText, payDays: String(settings.payDays), maxLineQuantity: String(settings.maxLineQuantity), returnDays: String(settings.returnDays) }} />
         </Card>
         <Card>
           <h2 className="text-headline font-bold">Selling in each market</h2>

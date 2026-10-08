@@ -193,7 +193,7 @@ export function SpecialForm({
 
 // ─── Home page and shop settings ─────────────────────────────────────
 
-export function ShopSettingsForm({ settings, readOnly }: { settings: { heroTitle: string; heroText: string; payDays: string; maxLineQuantity: string }; readOnly: boolean }) {
+export function ShopSettingsForm({ settings, readOnly }: { settings: { heroTitle: string; heroText: string; payDays: string; maxLineQuantity: string; returnDays: string }; readOnly: boolean }) {
   const [state, action, pending] = useActionState(shopSettingsAction, initial);
   const err = state.fieldErrors ?? {};
   const v = state.values ?? {};
@@ -204,6 +204,7 @@ export function ShopSettingsForm({ settings, readOnly }: { settings: { heroTitle
       <div className="grid gap-5 md:grid-cols-2">
         <TextField id="payDays" label="Days to pay by bank transfer" inputMode="numeric" defaultValue={v.payDays ?? settings.payDays} error={err.payDays} hint="Unpaid orders are cancelled after this, and their special units go back on sale." disabled={readOnly} />
         <TextField id="maxLineQuantity" label="Most of one item in a cart" inputMode="numeric" defaultValue={v.maxLineQuantity ?? settings.maxLineQuantity} error={err.maxLineQuantity} hint="Larger orders are for business accounts." disabled={readOnly} />
+        <TextField id="returnDays" label="Days to ask for a return" inputMode="numeric" defaultValue={v.returnDays ?? settings.returnDays} error={err.returnDays} hint="Counted from when the order was sent or made ready. Faulty items can be sent back at any time." disabled={readOnly} />
       </div>
       <FormErrors state={state} />
       {readOnly ? null : <Submit pending={pending} label="Save" />}
@@ -228,7 +229,7 @@ export function AddFeaturedForm() {
 
 // ─── Selling in a market ─────────────────────────────────────────────
 
-export function MarketTaxForm({ code, values, readOnly }: { code: string; values: { taxName: string; taxPercent: string; bankDetails: string }; readOnly: boolean }) {
+export function MarketTaxForm({ code, values, readOnly }: { code: string; values: { taxName: string; taxPercent: string; taxNumber: string; bankDetails: string }; readOnly: boolean }) {
   const [state, action, pending] = useActionState(marketTaxAction, initial);
   const err = state.fieldErrors ?? {};
   const v = state.values ?? {};
@@ -238,6 +239,7 @@ export function MarketTaxForm({ code, values, readOnly }: { code: string; values
       <div className="grid gap-5 md:grid-cols-2">
         <TextField id="taxName" label="Tax name" defaultValue={v.taxName ?? values.taxName} error={err.taxName} hint="Shown with prices, such as VAT." disabled={readOnly} />
         <TextField id="taxPercent" label="Tax rate, percent" inputMode="decimal" defaultValue={v.taxPercent ?? values.taxPercent} error={err.taxPercent} hint="Shop prices include it." disabled={readOnly} />
+        <TextField id="taxNumber" label="Our tax number here (optional)" defaultValue={v.taxNumber ?? values.taxNumber} error={err.taxNumber} hint="Printed on tax invoices." disabled={readOnly} />
       </div>
       <TextAreaField id="bankDetails" label="Bank details for transfers" rows={5} defaultValue={v.bankDetails ?? values.bankDetails} error={err.bankDetails} hint="Account name, bank, branch, account number and SWIFT code. Sent with every order. Leave empty to stop orders in this market." disabled={readOnly} />
       <FormErrors state={state} />

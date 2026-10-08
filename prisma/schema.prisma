@@ -64,6 +64,8 @@ model Market {
   taxName           String   @default("VAT")
   /// 1,400 is 14%.
   taxRateBps        Int      @default(0)
+  /// Our tax registration number in this market, printed on tax invoices.
+  taxNumber         String   @default("")
   /// Delivery to an address: the fee in the market's currency, free from an order total.
   deliveryEnabled   Boolean  @default(false)
   deliveryFeeMinor  BigInt   @default(0)
@@ -246,6 +248,7 @@ model User {
   passkeys        Passkey[]
   invitationsSent StaffInvitation[]  @relation("staffInvitedBy")
   staffInvitation StaffInvitation?   @relation("staffInvitationAccepted")
+  savedLists      SavedList[]
 }
 
 enum OrgRole {
@@ -298,6 +301,9 @@ model Organisation {
   creditApplications CreditApplication[]
   orders             Order[]
   quotes             Quote[]
+  invoices           Invoice[]
+  returns            ReturnRequest[]
+  savedLists         SavedList[]
 
   @@index([customerType])
   @@index([verification])
@@ -755,6 +761,7 @@ model Product {
   quoteLines     QuoteLine[]
   stock          StockLevel[]
   stockMovements StockMovement[]
+  savedListLines SavedListLine[]
 
   @@unique([brandId, mpn])
   @@index([mpnKey])
@@ -1069,6 +1076,8 @@ model ShopSettings {
   /// The most of one item in one order.
   maxLineQuantity Int      @default(10)
   orderPrefix     String   @default("ICT")
+  /// Days after an order is sent or made ready that a return can be asked for. Faulty items are not limited by it.
+  returnDays      Int      @default(14)
   updatedAt       DateTime @updatedAt
 }
 
@@ -1252,6 +1261,8 @@ model Order {
   quote           Quote?           @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   purchaseOrders  PurchaseOrder[]
   deliveries      Delivery[]
+  invoice         Invoice?
+  returns         ReturnRequest[]
 
   @@index([status, createdAt])
   @@index([userId])
@@ -1298,6 +1309,7 @@ model OrderLine {
   trackingEvents TrackingEvent[]
   deliveryLines  DeliveryLine[]
   stockMovements StockMovement[]
+  returnLines    ReturnLine[]
 
   @@index([orderId])
 }
@@ -1978,4 +1990,136 @@ model DeliveryLine {
   orderLine OrderLine @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
 
   @@unique([deliveryId, orderLineId])
+}
+
+// ─── D8: customer portal ─────────────────────────────────────────────
+
+/// The tax invoice for an order, issued once when the order is sent or
+/// made ready. What it is for is the order's lines; who it is made out
+/// to is kept as it was on the day.
+model Invoice {
+  id              String   @id @default(cuid())
+  /// e.g. INV-100001.
+  number          String   @unique
+  orderId         String   @unique
+  userId          String?
+  organisationId  String?
+  currency        String
+  totalMinor      BigInt
+  taxMinor        BigInt
+  /// Name, organisation and address, one per line.
+  billTo          String
+  /// The customer's tax number, when they have one.
+  taxNumber       String   @default("")
+  issuedAt        DateTime
+  /// The order's due date on account, else the day it was issued.
+  dueAt           DateTime
+  /// The secret in the link we email, so it opens without signing in.
+  accessTokenHash String   @unique
+  createdAt       DateTime @default(now())
+
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, issuedAt])
+  @@index([userId, issuedAt])
+}
+
+enum ReturnReason {
+  FAULTY
+  DAMAGED
+  WRONG_ITEM
+  NOT_NEEDED
+  OTHER
+}
+
+enum ReturnStatus {
+  /// Asked for by the customer, waiting for us.
+  REQUESTED
+  /// Agreed: the customer sends the items back.
+  APPROVED
+  DECLINED
+  /// The items are back with us.
+  RECEIVED
+  /// Settled: refunded, replaced or repaired, as the note says.
+  CLOSED
+  /// Withdrawn by the customer before we answered.
+  CANCELLED
+}
+
+/// A customer's request to send items from an order back.
+model ReturnRequest {
+  id               String       @id @default(cuid())
+  /// e.g. RMA-100001.
+  number           String       @unique
+  orderId          String
+  userId           String?
+  organisationId   String?
+  status           ReturnStatus @default(REQUESTED)
+  reason           ReturnReason
+  /// What is wrong, in the customer's words.
+  details          String
+  requestedByLabel String
+  /// Our answer, shown to the customer: how to send it back, why not, or how it was settled.
+  note             String       @default("")
+  decidedByLabel   String?
+  decidedAt        DateTime?
+  receivedAt       DateTime?
+  closedAt         DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  lines        ReturnLine[]
+
+  @@index([orderId])
+  @@index([organisationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model ReturnLine {
+  id          String @id @default(cuid())
+  returnId    String
+  orderLineId String
+  quantity    Int
+
+  request   ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  orderLine OrderLine     @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+
+  @@unique([returnId, orderLineId])
+}
+
+/// Products a customer buys again and again. An organisation's lists are
+/// shared by its team; a person's own lists are theirs alone.
+model SavedList {
+  id             String   @id @default(cuid())
+  name           String
+  /// Who made it.
+  userId         String
+  /// Null: the person's own list.
+  organisationId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation Organisation?   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  lines        SavedListLine[]
+
+  @@index([organisationId])
+  @@index([userId])
+}
+
+model SavedListLine {
+  id        String   @id @default(cuid())
+  listId    String
+  productId String
+  quantity  Int
+  createdAt DateTime @default(now())
+
+  list    SavedList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  product Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, productId])
 }

@@ -148,6 +148,56 @@ export const TEMPLATES: Record<string, Template> = {
       paragraphs: [`We cancelled order ${str(p.number)}: ${str(p.reason)}.`, str(p.refund) ? "We'll refund what you paid and email you when it's done." : "Nothing was paid, so nothing more is needed."],
     },
   }),
+  "invoice.issued": (p, ctx) => ({
+    subject: `Invoice ${str(p.number)} for order ${str(p.order)}`,
+    body: {
+      heading: "Your tax invoice",
+      paragraphs: [`Here is invoice ${str(p.number)} for order ${str(p.order)}, ${str(p.total)}.`, str(p.balance) ? `${str(p.balance)} is due by ${str(p.due)}. Pay by bank transfer with ${str(p.order)} as the reference.` : "It is paid in full. Thank you."],
+      ...(str(p.balance) && str(p.bankDetails) ? { box: { title: "Pay into", text: `${str(p.bankDetails)}\nReference: ${str(p.order)}` } } : {}),
+      button: { label: "Download the invoice", url: `${ctx.appUrl}/invoices/${encodeURIComponent(str(p.number))}?t=${encodeURIComponent(str(p.token))}` },
+      footnote: "Keep this email: its link opens the invoice without signing in. Signed-in customers find every invoice in their account.",
+    },
+  }),
+  "return.requested": (p, ctx) => ({
+    subject: `Return ${str(p.number)} received`,
+    body: {
+      heading: "We have your return request",
+      paragraphs: [`We have your request ${str(p.number)} to return items from order ${str(p.order)}.`, "We check it and email you how to send the items back, usually within a working day. Please don't send anything until then."],
+      list: str(p.lines).split("\n").filter(Boolean),
+      button: { label: "See your returns", url: `${ctx.appUrl}/account/returns/${encodeURIComponent(str(p.number))}` },
+    },
+  }),
+  "return.approved": (p, ctx) => ({
+    subject: `Return ${str(p.number)} approved`,
+    body: {
+      heading: "Your return is approved",
+      paragraphs: [`You can send back the items in return ${str(p.number)} from order ${str(p.order)}. Pack them with this number on the outside.`, ...(str(p.note) ? [str(p.note)] : [])],
+      button: { label: "See the return", url: `${ctx.appUrl}/account/returns/${encodeURIComponent(str(p.number))}` },
+    },
+  }),
+  "return.declined": (p, ctx) => ({
+    subject: `Your return ${str(p.number)}`,
+    body: {
+      heading: "We can't accept this return",
+      paragraphs: [`We can't accept return ${str(p.number)} for order ${str(p.order)}: ${str(p.note)}`, "Reply to this email if you think we have it wrong."],
+      button: { label: "See the return", url: `${ctx.appUrl}/account/returns/${encodeURIComponent(str(p.number))}` },
+    },
+  }),
+  "return.received": (p) => ({
+    subject: `Return ${str(p.number)} is back with us`,
+    body: {
+      heading: "We have the items",
+      paragraphs: [`The items in return ${str(p.number)} have reached us. We check them and email you when it is settled.`, ...(str(p.note) ? [str(p.note)] : [])],
+    },
+  }),
+  "return.closed": (p, ctx) => ({
+    subject: `Return ${str(p.number)} is settled`,
+    body: {
+      heading: "Your return is settled",
+      paragraphs: [`Return ${str(p.number)} for order ${str(p.order)} is settled: ${str(p.note)}`],
+      button: { label: "See the return", url: `${ctx.appUrl}/account/returns/${encodeURIComponent(str(p.number))}` },
+    },
+  }),
   "quote.received": (p, ctx) => ({
     subject: `We have your request for quote ${str(p.number)}`,
     body: {

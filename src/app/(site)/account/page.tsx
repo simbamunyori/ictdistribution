@@ -10,7 +10,10 @@ import { requireCustomer } from "@/server/auth/next";
 import { prisma } from "@/server/db";
 import { currentMarket } from "@/server/markets/current";
 import { ORG_ROLE_LABEL } from "@/server/org/access";
+import { portalSummary } from "@/server/portal/overview";
+import { portalCan } from "@/server/portal/scope";
 import { listCustomerTypes, ORGANISATION_TYPES, priceLevelFor } from "@/server/pricing/customer-types";
+import { formatMoney } from "@/lib/money";
 import { switchAction } from "./actions";
 
 export const metadata: Metadata = { title: "Your account" };
@@ -18,14 +21,27 @@ export const metadata: Metadata = { title: "Your account" };
 export default async function Account({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const q = await searchParams;
   const session = await requireCustomer("/account");
-  const [orgs, level, { market, markets }, types, history] = await Promise.all([
+  const [orgs, level, { market, markets }, types, history, summary] = await Promise.all([
     organisationsFor(prisma, session.userId),
     priceLevelFor(prisma, session.activeOrganisationId),
     currentMarket(),
     listCustomerTypes(prisma),
     prisma.auditEvent.findMany({ where: { subjectUserId: session.userId, visibleToCustomer: true }, orderBy: { createdAt: "desc" }, take: 10 }),
+    organisationsFor(prisma, session.userId).then((list) => portalSummary(prisma, { userId: session.userId, organisationId: list.find((o) => o.id === session.activeOrganisationId)?.id ?? null })),
   ]);
   const active = orgs.find((o) => o.id === session.activeOrganisationId);
+  const accounts = portalCan({ role: active?.role ?? null }, "accounts");
+  const tiles = [
+    { href: "/account/quotes", label: "Quotes ready for you", value: String(summary.quotes.ready), note: summary.quotes.preparing ? `${summary.quotes.preparing} being prepared` : "" },
+    { href: "/account/orders", label: "Orders in progress", value: String(summary.orders.inProgress), note: summary.orders.toPay ? `${summary.orders.toPay} waiting for payment` : "" },
+    { href: "/account/deliveries", label: "Items on the way", value: String(summary.onTheWay), note: "" },
+    ...(accounts
+      ? summary.owed.length
+        ? summary.owed.map((o) => ({ href: "/account/invoices?show=open", label: `To pay in ${o.currency}`, value: formatMoney({ amountMinor: o.owed, currency: o.currency }, o.locale), note: o.overdue ? `${formatMoney({ amountMinor: o.overdue, currency: o.currency }, o.locale)} overdue` : "" }))
+        : [{ href: "/account/invoices", label: "To pay", value: "Nothing", note: "" }]
+      : []),
+    { href: "/account/returns", label: "Open returns", value: String(summary.returns), note: "" },
+  ];
   const dates = new Intl.DateTimeFormat(market.locale, { dateStyle: "medium", timeStyle: "short", timeZone: market.timeZone });
 
   return (
@@ -36,6 +52,18 @@ export default async function Account({ searchParams }: { searchParams: Promise<
           Your account is ready.
         </Alert>
       ) : null}
+
+      <ul aria-label="At a glance" className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
+        {tiles.map((t) => (
+          <li key={t.label}>
+            <Link href={t.href} className="flex h-full flex-col rounded-lg border border-line bg-raised p-4 hover:border-brand">
+              <span className="text-caption font-semibold text-ink-muted uppercase">{t.label}</span>
+              <span className="mt-1 text-headline font-bold tabular-nums text-ink">{t.value}</span>
+              {t.note ? <span className={`text-callout ${t.note.endsWith("overdue") ? "text-negative" : "text-ink-muted"}`}>{t.note}</span> : null}
+            </Link>
+          </li>
+        ))}
+      </ul>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>

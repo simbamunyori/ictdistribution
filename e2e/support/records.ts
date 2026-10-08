@@ -10,7 +10,10 @@ import { PrismaClient } from "@prisma/client";
  * waiting for a check with a supplier request, one sent to the business),
  * and a paid order with two purchase orders (one sent with a known link,
  * one waiting for approval), travelling in a live shipment with one
- * delivery out and one being packed, made here when missing.
+ * delivery out and one being packed, and for the customer portal an
+ * order of the demo business sent on account and part paid, with its
+ * invoice, delivery, a return waiting and a saved list, made here when
+ * missing.
  * Development and CI databases only.
  */
 let cached: Promise<Record<string, string>> | null = null;
@@ -43,8 +46,9 @@ async function load(): Promise<Record<string, string>> {
     }
     const special = await db.special.findFirstOrThrow({ where: { slug: { startsWith: "demo-" } }, orderBy: { createdAt: "asc" } });
     const orderToken = "browser-checks-order";
-    let order = await db.order.findUnique({ where: { number: "ICT-TEST-1" } });
-    order ??= await db.order.create({
+    // Workers load these at the same time: whoever loses the race to create one reads the winner's.
+    const once = async <T>(find: () => Promise<T | null>, create: () => Promise<T>): Promise<T> => (await find()) ?? (await create().catch(async (e) => (await find()) ?? Promise.reject(e)));
+    const order = await once(() => db.order.findUnique({ where: { number: "ICT-TEST-1" } }), () => db.order.create({
       data: {
         number: "ICT-TEST-1",
         marketCode: "bw",
@@ -68,7 +72,7 @@ async function load(): Promise<Record<string, string>> {
         payBy: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
         lines: { create: [{ productId: product.id, description: product.name, mpn: product.mpn, quantity: 1, unitPriceMinor: 1_000_00n, lineTotalMinor: 1_000_00n }] },
       },
-    });
+    }));
     // The demo business, with a document to check and a credit application waiting.
     const business = await db.organisation.findFirstOrThrow({ where: { name: "Kgale Hill Systems (demo)" } });
     if (!(await db.organisationDocument.findFirst({ where: { organisationId: business.id } }))) {
@@ -87,8 +91,6 @@ async function load(): Promise<Record<string, string>> {
     const rfqToken = "browser-checks-rfq";
     const owner = await db.membership.findFirstOrThrow({ where: { organisationId: business.id, role: "OWNER" }, include: { user: true } });
     const price = 1_000_00n;
-    // Workers load these at the same time: whoever loses the race to create one reads the winner's.
-    const once = async <T>(find: () => Promise<T | null>, create: () => Promise<T>): Promise<T> => (await find()) ?? (await create().catch(async (e) => (await find()) ?? Promise.reject(e)));
     const review = await once(() => db.quote.findUnique({ where: { number: "QTEST1" } }), () => db.quote.create({
       data: {
         number: "QTEST1",
@@ -194,7 +196,45 @@ async function load(): Promise<Record<string, string>> {
     const pastShipment = await db.shipment.findFirstOrThrow({ where: { source: "HISTORY" }, orderBy: { createdAt: "asc" } });
     await once(() => db.delivery.findUnique({ where: { number: "DN-TEST1" } }), () => db.delivery.create({ data: { number: "DN-TEST1", orderId: procured.id, status: "DISPATCHED", carrier: "Demo Couriers", reference: "DC123", dispatchedAt: new Date(), createdByLabel: "Browser checks", lines: { create: [{ orderLineId: procuredLine.id, quantity: 1 }] } } }));
     await once(() => db.delivery.findUnique({ where: { number: "DN-TEST2" } }), () => db.delivery.create({ data: { number: "DN-TEST2", orderId: procured.id, status: "PREPARED", createdByLabel: "Browser checks", lines: { create: [{ orderLineId: procuredLine.id, quantity: 1 }] } } }));
-    return { liveShipment: liveShipment.id, pastShipment: pastShipment.id, procuredOrderNumber: procured.number, procuredOrderToken: "browser-checks-paid-order", procuredOrder: procured.id, sentPo: sentPo.id, waitingPo: waitingPo.id, poToken, quote: review.id, quoteNumber: sent.number, quoteToken, rfqToken, business: business.id, product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken };
+    // The customer portal: an order for the demo business, sent on account and part paid, with its invoice, delivery, a return waiting and a saved list.
+    const portal = await once(() => db.order.findUnique({ where: { number: "ICT-TEST-3" } }), () => db.order.create({
+      data: {
+        number: "ICT-TEST-3",
+        status: "FULFILLED",
+        marketCode: "bw",
+        currency: "BWP",
+        customerType: business.customerType,
+        userId: owner.userId,
+        organisationId: business.id,
+        email: owner.user.email,
+        name: owner.user.name,
+        phone: "+26771234567",
+        fulfilment: "DELIVERY",
+        addressLine1: "Plot 50, Gaborone West",
+        city: "Gaborone",
+        paymentMethod: "ACCOUNT",
+        customerReference: "PO-DEMO-77",
+        subtotalMinor: 2_000_00n,
+        deliveryMinor: 0n,
+        totalMinor: 2_000_00n,
+        taxMinor: 245_61n,
+        taxName: "VAT",
+        taxRateBps: 1400,
+        accessTokenHash: hash("browser-checks-portal-order"),
+        payBy: new Date(Date.now() - 5 * 86_400_000),
+        procuredAt: new Date(Date.now() - 12 * 86_400_000),
+        fulfilledAt: new Date(Date.now() - 10 * 86_400_000),
+        createdAt: new Date(Date.now() - 35 * 86_400_000),
+        lines: { create: [{ productId: product.id, description: product.name, mpn: product.mpn, quantity: 2, unitPriceMinor: 1_000_00n, lineTotalMinor: 2_000_00n, tracking: "DELIVERED", fromStock: true }] },
+        payments: { create: [{ method: "ACCOUNT", amountMinor: 500_00n, reference: "EFT DEMO", receivedOn: new Date(Date.now() - 2 * 86_400_000), recordedByLabel: "Browser checks" }] },
+      },
+    }));
+    const portalLine = await db.orderLine.findFirstOrThrow({ where: { orderId: portal.id } });
+    await once(() => db.invoice.findUnique({ where: { number: "INV-TEST1" } }), () => db.invoice.create({ data: { number: "INV-TEST1", orderId: portal.id, userId: owner.userId, organisationId: business.id, currency: "BWP", totalMinor: 2_000_00n, taxMinor: 245_61n, billTo: `${business.name}\nAttention: ${owner.user.name}\nPlot 50, Gaborone West`, issuedAt: new Date(Date.now() - 10 * 86_400_000), dueAt: new Date(Date.now() - 5 * 86_400_000), accessTokenHash: hash("browser-checks-invoice") } }));
+    await once(() => db.delivery.findUnique({ where: { number: "DN-TEST3" } }), () => db.delivery.create({ data: { number: "DN-TEST3", orderId: portal.id, status: "DELIVERED", carrier: "Demo Couriers", reference: "DC777", dispatchedAt: new Date(Date.now() - 10 * 86_400_000), deliveredAt: new Date(Date.now() - 9 * 86_400_000), receivedBy: "Reception", createdByLabel: "Browser checks", lines: { create: [{ orderLineId: portalLine.id, quantity: 2 }] } } }));
+    const portalReturn = await once(() => db.returnRequest.findUnique({ where: { number: "RMA-TEST1" } }), () => db.returnRequest.create({ data: { number: "RMA-TEST1", orderId: portal.id, userId: owner.userId, organisationId: business.id, reason: "FAULTY", details: "It won't power on.", requestedByLabel: owner.user.name, lines: { create: [{ orderLineId: portalLine.id, quantity: 1 }] } } }));
+    const portalList = await once(() => db.savedList.findFirst({ where: { organisationId: business.id, name: "Office kit (demo)" } }), () => db.savedList.create({ data: { name: "Office kit (demo)", userId: owner.userId, organisationId: business.id, lines: { create: [{ productId: product.id, quantity: 3 }] } } }));
+    return { liveShipment: liveShipment.id, pastShipment: pastShipment.id, procuredOrderNumber: procured.number, procuredOrderToken: "browser-checks-paid-order", procuredOrder: procured.id, sentPo: sentPo.id, waitingPo: waitingPo.id, poToken, quote: review.id, quoteNumber: sent.number, quoteToken, rfqToken, business: business.id, product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken, portalOrder: portal.id, portalOrderNumber: portal.number, portalReturn: portalReturn.id, portalReturnNumber: portalReturn.number, portalList: portalList.id };
   } finally {
     await db.$disconnect();
   }

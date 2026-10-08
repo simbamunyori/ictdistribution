@@ -4,19 +4,19 @@ import { ButtonLink } from "@/components/ui/button";
 import { Badge, Card, PageHeader } from "@/components/ui/card";
 import { formatMoney } from "@/lib/money";
 import { formatDate } from "@/lib/zoned";
-import { requireCustomer } from "@/server/auth/next";
 import { prisma } from "@/server/db";
+import { portalViewer } from "@/server/portal/viewer";
 import { customerStatusText, OPEN_STATUSES, QUOTE_STATUS_TONE, QUOTE_TYPE_LABEL } from "@/server/quotes/common";
 import { customerQuotes } from "@/server/quotes/customer";
 
 export const metadata: Metadata = { title: "Your quotes" };
 
 export default async function AccountQuotes() {
-  const session = await requireCustomer("/account/quotes");
-  const quotes = await customerQuotes(prisma, { userId: session.userId, organisationId: session.activeOrganisationId });
+  const v = await portalViewer("/account/quotes");
+  const quotes = await customerQuotes(prisma, v);
   return (
     <>
-      <PageHeader title="Your quotes" lead={session.activeOrganisationId ? "Quotes asked for by anyone on your team." : "Quotes you asked for."} />
+      <PageHeader title="Your quotes" lead={`${v.organisationId ? "Quotes asked for by anyone on your team." : "Quotes you asked for."} We email each quote when it is ready, and it can be accepted here.`} />
       <div className="mb-6">
         <ButtonLink href="/account/quotes/new">Ask for a quote</ButtonLink>
       </div>

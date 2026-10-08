@@ -193,3 +193,32 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
   name a supplier.
 - **Marking an order sent still works** without deliveries: it takes what
   is kept in stock for the order and moves its lines out for delivery.
+
+## D8
+
+- **One tax invoice per order, issued when it is sent or ready to
+  collect**, as the pro forma already promised. It charges the order's
+  total; payments recorded against the order settle it. Credit notes,
+  for cancellations and returns after an invoice, come with finance in D10.
+- **Our tax number is set per market** by an Admin, beside the tax rate,
+  and printed on tax invoices. It is empty until the business says which
+  legal entity trades where.
+- **A statement counts invoices when issued and payments when
+  received.** Money paid for an order before it is sent shows as a credit
+  until the invoice follows. Ageing is by days past each invoice's due
+  date.
+- **An account page shows one account**: the organisation's when buying
+  for one, else the person's own. The order and quote lists follow the
+  same rule, so a person's own orders no longer mix into their team's.
+- **Roles decide what a member sees and does.** Everyone sees quotes,
+  orders, invoices, deliveries, returns and lists. The statement and
+  payments are for Owners, Finance and Viewers. Buying again, lists and
+  returns are for Owners and Buyers.
+- **Returns are asked for per line** for what has left us, within the
+  return window in the shop settings (14 days to start), or at any time
+  for a fault. Staff approve, decline, receive and settle each with a note
+  the customer sees. Serials, warranty and repairs come with after-sales
+  in D9.
+- **Buying again uses today's prices.** A past order or a list goes into
+  the cart priced afresh; anything no longer sold, or priced only on a
+  quote, is left out and named.

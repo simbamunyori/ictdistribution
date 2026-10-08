@@ -44,6 +44,7 @@ export const STAFF_PERMISSIONS = {
   manageLogisticsRules: "Change duty rules and how freight is estimated",
   manageStock: "Add warehouses, receive and count stock",
   manageDeliveries: "Prepare deliveries, dispatch them and record proof of delivery",
+  manageReturns: "Approve or decline customers' returns, receive the items and settle them",
   manageStaff: "Invite staff, change their role and deactivate them",
   viewAudit: "Read the full audit log",
 } as const;
@@ -81,6 +82,7 @@ const ALLOWED: Record<StaffPermission, StaffRole[]> = {
   manageLogisticsRules: ["ADMIN"],
   manageStock: ["ADMIN", "LOGISTICS"],
   manageDeliveries: ["ADMIN", "SALES", "LOGISTICS"],
+  manageReturns: ["ADMIN", "SALES", "LOGISTICS", "SUPPORT"],
   manageStaff: ["ADMIN"],
   viewAudit: ["ADMIN", "FINANCE"],
 };
