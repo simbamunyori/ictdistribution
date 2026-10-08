@@ -185,19 +185,19 @@ export async function organisationHistory(db: Pick<PrismaClient, "auditEvent">, 
 
 // ─── Staff ───────────────────────────────────────────────────────────
 
-export async function listCustomers(db: PrismaClient, actor: StaffActor, filter: { type?: CustomerTypeCode; q?: string } = {}) {
+export async function listCustomers(db: PrismaClient, actor: StaffActor, filter: { type?: CustomerTypeCode; q?: string; waiting?: boolean } = {}) {
   assertStaffCan(actor, "viewCustomers");
   const q = filter.q?.trim();
   const [organisations, individuals] = await Promise.all([
     filter.type === "INDIVIDUAL"
       ? []
       : db.organisation.findMany({
-          where: { ...(filter.type ? { customerType: filter.type } : {}), ...(q ? { name: { contains: q, mode: "insensitive" } } : {}) },
+          where: { ...(filter.type ? { customerType: filter.type } : {}), ...(filter.waiting ? { verification: "PENDING" } : {}), ...(q ? { name: { contains: q, mode: "insensitive" } } : {}) },
           include: { _count: { select: { memberships: { where: { active: true } } } } },
-          orderBy: { createdAt: "desc" },
+          orderBy: filter.waiting ? { submittedAt: "asc" } : { createdAt: "desc" },
           take: 100,
         }),
-    filter.type && filter.type !== "INDIVIDUAL"
+    (filter.type && filter.type !== "INDIVIDUAL") || filter.waiting
       ? []
       : db.user.findMany({
           where: { kind: "CUSTOMER", memberships: { none: { active: true } }, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }] } : {}) },

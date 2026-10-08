@@ -6,22 +6,28 @@ import { prisma } from "@/server/db";
 import { env } from "@/server/env";
 import { findPlaceholders } from "@/server/placeholders";
 import { rateWarnings } from "@/server/pricing/rates";
+import { staffCan } from "@/server/staff/access";
+import { waitingImports } from "@/server/suppliers/price-lists";
 
 export default async function AdminHome() {
   const session = await requireStaff();
-  const [warnings, placeholders, organisations, individuals, staff, markets] = await Promise.all([
+  const canSuppliers = staffCan({ staffRole: session.user.staffRole }, "viewSuppliers");
+  const [warnings, placeholders, organisations, individuals, staff, markets, products, lists] = await Promise.all([
     rateWarnings(prisma),
     findPlaceholders(prisma, env()),
     prisma.organisation.count(),
     prisma.user.count({ where: { kind: "CUSTOMER", memberships: { none: { active: true } } } }),
     prisma.user.count({ where: { kind: "STAFF", deactivatedAt: null } }),
     prisma.market.findMany({ where: { enabled: true }, orderBy: { sortOrder: "asc" }, select: { code: true, name: true, currency: true } }),
+    prisma.product.count({ where: { status: "ACTIVE" } }),
+    canSuppliers ? waitingImports(prisma) : 0,
   ]);
   const tiles = [
     { label: "Business customers", value: organisations, href: "/admin/customers" },
     { label: "Individual customers", value: individuals, href: "/admin/customers?type=INDIVIDUAL" },
     { label: "Staff", value: staff, href: "/admin/staff" },
     { label: "Markets open", value: markets.length, href: "/admin/markets" },
+    { label: "Products in the shop", value: products, href: "/admin/products?status=ACTIVE" },
   ];
   return (
     <>
@@ -35,6 +41,14 @@ export default async function AdminHome() {
             </Link>
           </Alert>
         ))}
+        {lists ? (
+          <Alert tone="info">
+            {lists === 1 ? "A supplier price list is" : `${lists} supplier price lists are`} waiting for review.{" "}
+            <Link href="/admin/suppliers" className="font-semibold underline underline-offset-4">
+              Suppliers
+            </Link>
+          </Alert>
+        ) : null}
         {placeholders.length ? (
           <Alert tone="info">
             <span className="font-semibold">Before customers use this server, replace these development values:</span>
@@ -46,7 +60,7 @@ export default async function AdminHome() {
           </Alert>
         ) : null}
       </div>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {tiles.map((t) => (
           <Link key={t.label} href={t.href} className="rounded-lg border border-line bg-raised p-5 hover:border-brand">
             <span className="block text-callout text-ink-muted">{t.label}</span>
@@ -56,7 +70,7 @@ export default async function AdminHome() {
       </div>
       <Card className="mt-6">
         <h2 className="text-headline font-bold">Coming in the next milestones</h2>
-        <p className="mt-1 text-ink-muted">The catalogue, suppliers and pricing, the shop and checkout, quotes, orders and delivery each get their own pages here as they are built.</p>
+        <p className="mt-1 text-ink-muted">The shop and checkout, specials, quotes, orders and delivery each get their own pages here as they are built.</p>
       </Card>
     </>
   );
