@@ -44,7 +44,7 @@ const take = (o: Record<string, string> = {}) => ({ phone: "+26771234567", fulfi
 const amount = (minor: bigint) => `${minor / 100n}.${(minor % 100n).toString().padStart(2, "0")}`;
 
 async function product(cost: string, supplierId = mailSupplier.id) {
-  const mpn = `PO${tag()}`;
+  const mpn = `PO1${tag()}`;
   const p = await createProduct(db, admin, { name: `Switch ${mpn}`, brand: "Ubiquiti", mpn, categoryId, summary: "", description: "", warrantyMonths: "12", warrantyTerms: "", sellToIndividuals: true, status: "ACTIVE", sourcingRule: null });
   await saveOffer(db, admin, { supplierId, productId: p.id, cost, supplierSku: "", leadTimeDays: "4", moq: "", stock: "", active: true });
   return p;
@@ -284,7 +284,7 @@ describe.skipIf(!hasDb)("purchase orders for shop orders", () => {
   });
 
   it("leaves a line nobody supplies for staff, and only Admin changes the rules", async () => {
-    const mpn = `NOSUP${tag()}`;
+    const mpn = `NOSUP1${tag()}`;
     const p = await createProduct(db, admin, { name: `Cable ${mpn}`, brand: "Generic", mpn, categoryId, summary: "", description: "", warrantyMonths: "", warrantyTerms: "", sellToIndividuals: true, status: "ACTIVE", sourcingRule: null });
     await saveOffer(db, admin, { supplierId: mailSupplier.id, productId: p.id, cost: "5", supplierSku: "", leadTimeDays: "", moq: "", stock: "", active: true });
     const order = await paidShopOrder([{ productId: p.id, quantity: 1 }]);
