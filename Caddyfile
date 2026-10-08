@@ -1,0 +1,16 @@
+{$DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		-Server
+	}
+	# Caddy sets X-Forwarded-For to the connecting address and ignores any
+	# value the client sent, so the app can trust it for the admin allowlist
+	# and rate limits.
+	reverse_proxy app:3000
+}
+
+# One address for everyone, so passkeys (tied to the exact host) always work.
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}

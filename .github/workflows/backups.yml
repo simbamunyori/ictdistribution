@@ -1,0 +1,44 @@
+name: Backups
+
+# Every Monday: takes a backup on the production server, downloads the
+# newest off-site copy, restores it into a scratch database and checks it
+# (deploy/restore-test.sh). A failure here means the backups need looking at.
+on:
+  schedule:
+    - cron: "30 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  restore-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HOST: ${{ secrets.DEPLOY_HOST }}
+      PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+    steps:
+      - name: Check the server is set up
+        run: |
+          if [ -z "$HOST" ]; then
+            echo "::error::The deploy secrets are not set yet (docs/deploy.md)."
+            exit 1
+          fi
+      - name: Sign in to the server
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+      - name: Back up, then restore the newest off-site copy into a scratch database
+        run: ssh -p "$PORT" -o BatchMode=yes "deploy@$HOST" "ictd restore-test"
+      - name: Forget the key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

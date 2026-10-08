@@ -1,0 +1,120 @@
+@import "tailwindcss";
+@plugin "../config/theme/tokens-plugin.mjs";
+
+/*
+ * No values live here. Every colour, radius and spacing value comes from
+ * brand/tokens/tokens.json through the plugin above; this file only gives
+ * those variables Tailwind names. Components use the names (bg-surface,
+ * text-ink-muted, border-line ...), never hex.
+ *
+ * Dark mode follows the device, or data-theme="dark" on <html>.
+ */
+
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
+@theme inline {
+  --color-*: initial;
+  --color-page: var(--t-bg);
+  --color-surface: var(--t-surface);
+  --color-raised: var(--t-surface-raised);
+  --color-line: var(--t-border);
+  --color-ink: var(--t-text);
+  --color-ink-body: var(--t-text-body);
+  --color-ink-muted: var(--t-text-muted);
+  --color-brand: var(--t-primary);
+  --color-brand-hover: var(--t-primary-hover);
+  --color-brand-soft: var(--t-primary-soft);
+  --color-on-brand: var(--t-on-primary);
+  --color-link: var(--t-primary-text);
+  --color-accent: var(--t-accent);
+  --color-highlight: var(--t-highlight);
+  --color-highlight-soft: var(--t-highlight-soft);
+  --color-on-highlight: var(--t-on-highlight);
+  --color-highlight-ink: var(--t-highlight-text);
+  --color-positive: var(--t-success);
+  --color-positive-soft: var(--t-success-soft);
+  --color-warning: var(--t-warning);
+  --color-warning-soft: var(--t-warning-soft);
+  --color-negative: var(--t-danger);
+  --color-negative-soft: var(--t-danger-soft);
+  --color-info: var(--t-info);
+  --color-info-soft: var(--t-info-soft);
+  --color-focus: var(--t-focus);
+  --color-forest: var(--t-forest);
+  --color-sand: var(--t-sand);
+  --color-ink-on-dark: var(--t-ink-on-dark);
+  --color-white: #fff;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --font-sans: var(--font-jakarta), var(--t-font);
+  --radius-sm: var(--t-radius-sm);
+  --radius-md: var(--t-radius-md);
+  --radius-lg: var(--t-radius-lg);
+}
+
+/* Not inline: utilities read these variables, so the larger sizes below take effect from 768 px. */
+@theme {
+  /* The type scale: phone first, a step up from 768 px where it matters. */
+  --text-display: 2.25rem;
+  --text-display--line-height: 1.1;
+  --text-title: 1.5rem;
+  --text-title--line-height: 1.25;
+  --text-headline: 1.125rem;
+  --text-headline--line-height: 1.4;
+  --text-body: 1rem;
+  --text-body--line-height: 1.55;
+  --text-callout: 0.875rem;
+  --text-callout--line-height: 1.45;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.4;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-page font-sans text-body text-ink-body antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply text-ink;
+    letter-spacing: var(--t-tracking-headline);
+    text-wrap: balance;
+  }
+  :focus-visible {
+    outline: 2px solid var(--t-focus);
+    outline-offset: 2px;
+  }
+  @media (min-width: 768px) {
+    :root {
+      --text-display: 3rem;
+      --text-title: 1.75rem;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Section labels that carry meaning, never above every heading. */
+@utility kicker {
+  @apply text-caption font-semibold uppercase;
+  letter-spacing: var(--t-tracking-label);
+}

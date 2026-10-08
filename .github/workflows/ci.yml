@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, types, copy, tests and build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ictd
+          POSTGRES_PASSWORD: ictd
+          POSTGRES_DB: ictd
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ictd"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ictd:ictd@localhost:5432/ictd
+      TEST_DATABASE_URL: postgresql://ictd:ictd@localhost:5432/ictd_test
+      REDIS_URL: redis://localhost:6379
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Audit dependencies
+        # Fails on any high or critical advisory in what ships to production.
+        run: npm audit --omit=dev --audit-level=high
+      - run: npx prisma generate
+      - name: Check migrations match the schema
+        run: |
+          PGPASSWORD=ictd psql -h localhost -U ictd -d ictd -c "CREATE DATABASE ictd_shadow" -c "CREATE DATABASE ictd_test"
+          npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url postgresql://ictd:ictd@localhost:5432/ictd_shadow --exit-code
+      - name: Apply migrations
+        run: npx prisma migrate deploy && DATABASE_URL=$TEST_DATABASE_URL npx prisma migrate deploy
+      - name: Seed the demo data (twice, to prove it is safe to rerun)
+        run: npm run db:seed && npm run db:seed | grep -q "Nothing to add"
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Check copy (no em dashes, no exclamation marks)
+        run: npm run copy-check
+      - name: Tests (unit, and integration against PostgreSQL)
+        run: echo "APP_SECRET=$(openssl rand -base64 32)" >> "$GITHUB_ENV" && npm test
+      - run: npm run build
+
+  browser:
+    name: Accessibility, phone and desktop, light and dark
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ictd
+          POSTGRES_PASSWORD: ictd
+          POSTGRES_DB: ictd
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ictd"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ictd:ictd@localhost:5432/ictd
+      REDIS_URL: redis://localhost:6379
+      NEXT_TELEMETRY_DISABLED: 1
+      APP_URL: http://localhost:3000
+      BASE_URL: http://localhost:3000
+      # No background jobs, so the demo data stays put while pages are checked.
+      JOBS: "off"
+      RATE_SOURCE: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: A throwaway app key
+        run: echo "APP_SECRET=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+      - run: npx prisma generate && npx prisma migrate deploy && npm run db:seed
+      - run: npm run build
+      - name: Production refuses to start on placeholder values
+        run: scripts/check-placeholder-refusal.sh
+      - name: Start the app (a demo server, on the seeded placeholders on purpose)
+        run: |
+          ALLOW_PLACEHOLDERS=yes npm start > server.log 2>&1 &
+          for i in $(seq 60); do curl -sf -o /dev/null http://localhost:3000/api/health && exit 0; sleep 1; done
+          cat server.log; exit 1
+      - name: Accessibility (axe on every page)
+        run: npm run test:a11y
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: accessibility-report
+          path: |
+            playwright-report/
+            test-results/
+            server.log
+
+  docker:
+    name: Production rehearsal (deploy, rollback, backup and restore)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production image
+        run: docker build -t ictd:ci .
+      - name: Rehearse production
+        run: bash deploy/rehearse.sh
