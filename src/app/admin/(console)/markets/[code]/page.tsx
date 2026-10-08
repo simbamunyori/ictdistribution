@@ -65,7 +65,7 @@ export default async function MarketPage({ params, searchParams }: { params: Pro
         <Card>
           <h3 className="mb-1 text-headline font-bold">Tax and bank details</h3>
           <p className="mb-4 text-callout text-ink-muted">Admins only. Shop prices include this tax, and orders by bank transfer show these details.</p>
-          <MarketTaxForm code={market.code} readOnly={!canEdit} values={{ taxName: market.taxName, taxPercent: String(market.taxRateBps / 100), bankDetails: market.bankDetails }} />
+          <MarketTaxForm code={market.code} readOnly={!canEdit} values={{ taxName: market.taxName, taxPercent: String(market.taxRateBps / 100), taxNumber: market.taxNumber, bankDetails: market.bankDetails }} />
         </Card>
         <Card>
           <h3 className="mb-4 text-headline font-bold">Delivery</h3>

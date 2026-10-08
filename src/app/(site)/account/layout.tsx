@@ -3,6 +3,7 @@ import { AccountNav } from "@/components/account/account-nav";
 import { requireCustomer } from "@/server/auth/next";
 import { actorFor } from "@/server/accounts/organisations";
 import { prisma } from "@/server/db";
+import { portalCan } from "@/server/portal/scope";
 
 export default async function AccountLayout({ children }: { children: React.ReactNode }) {
   const session = await requireCustomer("/account");
@@ -10,7 +11,7 @@ export default async function AccountLayout({ children }: { children: React.Reac
   return (
     <SiteFrame back="/account">
       <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] gap-8 px-4 py-8 md:grid-cols-[13rem_minmax(0,1fr)] md:px-6 md:py-12">
-        <AccountNav organisation={Boolean(actor)} />
+        <AccountNav organisation={Boolean(actor)} accounts={portalCan({ role: actor?.role ?? null }, "accounts")} />
         <div className="min-w-0">{children}</div>
       </div>
     </SiteFrame>

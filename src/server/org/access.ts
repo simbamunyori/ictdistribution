@@ -19,8 +19,10 @@ export type Permission =
   | "view"
   /** Place orders and ask for quotes. */
   | "buy"
-  /** Invoices, statements, payments and credit. */
+  /** Act on invoices, statements, payments and credit. */
   | "finance"
+  /** Read the statement and the payments made. */
+  | "accounts"
   /** Invite people and change what they can do. */
   | "manageTeam"
   /** Change the company details. */
@@ -30,6 +32,7 @@ const ALLOWED: Record<Permission, OrgRole[]> = {
   view: ["OWNER", "BUYER", "FINANCE", "VIEWER"],
   buy: ["OWNER", "BUYER"],
   finance: ["OWNER", "FINANCE"],
+  accounts: ["OWNER", "FINANCE", "VIEWER"],
   manageTeam: ["OWNER"],
   manageOrganisation: ["OWNER"],
 };

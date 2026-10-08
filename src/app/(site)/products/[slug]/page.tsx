@@ -2,6 +2,7 @@ import { Building2, FileText, ShieldCheck, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { SaveToListForm } from "@/components/account/portal-forms";
 import { AddToCart } from "@/components/shop/add-to-cart";
 import { leadTimeText, PriceTag } from "@/components/shop/price-tag";
 import { CompareToggle, ProductCard, ProductImage } from "@/components/shop/product-card";
@@ -10,10 +11,12 @@ import { buttonClass } from "@/components/ui/button";
 import { compareIds } from "@/server/catalogue/compare";
 import { shopProduct } from "@/server/catalogue/shop";
 import { prisma } from "@/server/db";
+import { listsFor } from "@/server/portal/lists";
+import { portalCan } from "@/server/portal/scope";
 import { TRADE_MAX_LINE } from "@/server/shop/cart";
 import { formatMoney } from "@/lib/money";
 import { shopSettings } from "@/server/shop/settings";
-import { shopPrices, shopWhere } from "@/server/shop/viewer";
+import { shopper, shopPrices, shopWhere } from "@/server/shop/viewer";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -30,7 +33,9 @@ export default async function ProductPage({ params }: Props) {
   const prices = await shopPrices();
   const [p, compare, settings, market] = await Promise.all([shopProduct(prisma, slug, prices), compareIds(), shopSettings(prisma), prisma.market.findUniqueOrThrow({ where: { code: prices.market.code }, select: { deliveryEnabled: true, deliveryNote: true, name: true } })]);
   if (!p) notFound();
-  const where = await shopWhere();
+  const [where, s] = await Promise.all([shopWhere(), shopper()]);
+  const v = s.user ? { userId: s.user.id, organisationId: s.organisation?.id ?? null, role: s.organisation?.role ?? null } : null;
+  const lists = v && portalCan(v, "buy") ? await listsFor(prisma, v) : null;
   const lead = leadTimeText(p.price?.leadTimeDays ?? null);
   const trade = where.standing === "trade";
   const max = trade ? TRADE_MAX_LINE : Math.min(settings.maxLineQuantity, p.price?.special?.perOrderLimit ?? Infinity, 20);
@@ -116,6 +121,14 @@ export default async function ProductPage({ params }: Props) {
                   <div className="mt-4">
                     <AddToCart productId={p.id} withQuantity max={max} />
                   </div>
+                  {lists ? (
+                    <details className="mt-4 rounded-md border border-line p-3">
+                      <summary className="cursor-pointer font-semibold text-link">Save to a list</summary>
+                      <div className="mt-3">
+                        <SaveToListForm productId={p.id} lists={lists.map((l) => ({ value: l.id, label: l.name }))} back={back} />
+                      </div>
+                    </details>
+                  ) : null}
                 </>
               ) : p.sellToIndividuals || trade ? (
                 <>

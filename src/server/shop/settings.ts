@@ -20,6 +20,7 @@ export interface ShopSettingsInput {
   heroText: string;
   payDays: string;
   maxLineQuantity: string;
+  returnDays: string;
 }
 
 export async function updateShopSettings(db: PrismaClient, actor: StaffActor, input: ShopSettingsInput, ip?: string | null) {
@@ -33,10 +34,12 @@ export async function updateShopSettings(db: PrismaClient, actor: StaffActor, in
   if (!Number.isInteger(payDays) || payDays < 1 || payDays > 14) fieldErrors.payDays = "Enter whole days from 1 to 14.";
   const maxLineQuantity = Number(input.maxLineQuantity);
   if (!Number.isInteger(maxLineQuantity) || maxLineQuantity < 1 || maxLineQuantity > 500) fieldErrors.maxLineQuantity = "Enter a whole number from 1 to 500.";
+  const returnDays = Number(input.returnDays);
+  if (!Number.isInteger(returnDays) || returnDays < 0 || returnDays > 365) fieldErrors.returnDays = "Enter whole days from 0 to 365.";
   if (Object.keys(fieldErrors).length) throw new DomainError("invalid", "Check the highlighted fields.", undefined, fieldErrors);
   await db.$transaction(async (tx) => {
-    await tx.shopSettings.upsert({ where: { id: "global" }, create: { id: "global", heroTitle, heroText, payDays, maxLineQuantity }, update: { heroTitle, heroText, payDays, maxLineQuantity } });
-    await audit(tx, staffAudit(actor, { action: "shop.settings", summary: `Changed the shop settings: ${payDays} days to pay by bank transfer, up to ${maxLineQuantity} of one item per order`, ipAddress: ip }));
+    await tx.shopSettings.upsert({ where: { id: "global" }, create: { id: "global", heroTitle, heroText, payDays, maxLineQuantity, returnDays }, update: { heroTitle, heroText, payDays, maxLineQuantity, returnDays } });
+    await audit(tx, staffAudit(actor, { action: "shop.settings", summary: `Changed the shop settings: ${payDays} days to pay by bank transfer, up to ${maxLineQuantity} of one item per order, returns within ${returnDays} days`, ipAddress: ip }));
   });
 }
 
@@ -102,6 +105,8 @@ export interface TaxInput {
   taxName: string;
   taxPercent: string;
   bankDetails: string;
+  /** Our tax registration number there. Left as it is when not given. */
+  taxNumber?: string;
 }
 
 /** Tax and bank details: Admin only, since they change what customers pay and where the money goes. */
@@ -114,14 +119,17 @@ export async function updateMarketTaxAndBank(db: PrismaClient, actor: StaffActor
   if (!Number.isFinite(pct) || pct < 0 || pct > 40) fieldErrors.taxPercent = "Enter a percentage from 0 to 40.";
   const bankDetails = input.bankDetails.trim().replace(/\r\n/g, "\n");
   if (bankDetails.length > 600) fieldErrors.bankDetails = "Keep it under 600 characters.";
+  const taxNumber = (input.taxNumber ?? "").trim();
+  if (taxNumber.length > 40) fieldErrors.taxNumber = "Keep it under 40 characters.";
   if (Object.keys(fieldErrors).length) throw new DomainError("invalid", "Check the highlighted fields.", undefined, fieldErrors);
   const taxRateBps = Math.round(pct * 100);
   await db.$transaction(async (tx) => {
     const before = await tx.market.findUnique({ where: { code } });
     if (!before) throw new DomainError("not-found", "No such market.");
-    await tx.market.update({ where: { code }, data: { taxName, taxRateBps, bankDetails } });
+    await tx.market.update({ where: { code }, data: { taxName, taxRateBps, bankDetails, ...(input.taxNumber === undefined ? {} : { taxNumber }) } });
     const changes: string[] = [];
     if (before.taxName !== taxName || before.taxRateBps !== taxRateBps) changes.push(`${taxName} ${before.taxRateBps / 100}% to ${taxRateBps / 100}%`);
+    if (input.taxNumber !== undefined && before.taxNumber !== taxNumber) changes.push(taxNumber ? `tax number ${taxNumber}` : "tax number removed");
     if (before.bankDetails !== bankDetails) changes.push(bankDetails ? "bank details changed" : "bank transfer switched off");
     if (changes.length) await audit(tx, staffAudit(actor, { action: "market.selling", summary: `Changed ${before.name}: ${changes.join(", ")}`, targetType: "Market", targetId: code, data: before.bankDetails !== bankDetails ? { bankDetails: { from: before.bankDetails, to: bankDetails } } : undefined, ipAddress: ip }));
   });
