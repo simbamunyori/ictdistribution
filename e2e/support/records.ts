@@ -6,7 +6,9 @@ import { PrismaClient } from "@prisma/client";
  * product, supplier and category, two demo price lists (one waiting
  * for its columns, one ready for review), a demo special, a demo
  * order with a known link, and the demo business with a document, a credit
- * application and a volume break at its level, made here when missing.
+ * application and a volume break at its level, and two demo quotes (one
+ * waiting for a check with a supplier request, one sent to the business),
+ * made here when missing.
  * Development and CI databases only.
  */
 let cached: Promise<Record<string, string>> | null = null;
@@ -77,7 +79,78 @@ async function load(): Promise<Record<string, string>> {
     if (!(await db.volumeBreak.findFirst({ where: { customerType: business.customerType, categoryId: product.categoryId, minQuantity: 3 } }))) {
       await db.volumeBreak.create({ data: { customerType: business.customerType, categoryId: product.categoryId, minQuantity: 3, discountBps: 300 } });
     }
-    return { business: business.id, product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken };
+    // Quotes: one waiting for a check, with a request to a supplier; one sent to the demo business.
+    const hash = (t: string) => createHash("sha256").update(t).digest("hex");
+    const quoteToken = "browser-checks-quote";
+    const rfqToken = "browser-checks-rfq";
+    const owner = await db.membership.findFirstOrThrow({ where: { organisationId: business.id, role: "OWNER" }, include: { user: true } });
+    const price = 1_000_00n;
+    // Workers load these at the same time: whoever loses the race to create one reads the winner's.
+    const once = async <T>(find: () => Promise<T | null>, create: () => Promise<T>): Promise<T> => (await find()) ?? (await create().catch(async (e) => (await find()) ?? Promise.reject(e)));
+    const review = await once(() => db.quote.findUnique({ where: { number: "QTEST1" } }), () => db.quote.create({
+      data: {
+        number: "QTEST1",
+        source: "EMAIL",
+        status: "REVIEW",
+        marketCode: "bw",
+        currency: "BWP",
+        customerType: "INDIVIDUAL",
+        email: "buyer@example.co.bw",
+        name: "Neo Buyer",
+        companyName: "Demo Clinic",
+        requestText: `2 x ${product.mpn}\n1 x 24 port managed switch`,
+        reviewReasons: "Line 2, 24 port managed switch: no price yet.\nIt came from someone without an account.",
+        taxRateBps: 1400,
+        subtotalMinor: 2n * price,
+        taxMinor: (2n * price * 14n) / 100n,
+        totalMinor: 2n * price + (2n * price * 14n) / 100n,
+        costBaseMinor: 120_00n,
+        marginBps: 1500,
+        lines: {
+          create: [
+            { position: 1, original: `2 x ${product.mpn}`, description: product.name, mpn: product.mpn, quantity: 2, productId: product.id, categoryId: product.categoryId, matchConfidence: 100, costSource: "CATALOGUE", supplierId: supplier.id, unitCostBaseMinor: 60_00n, unitPriceMinor: price, lineTotalMinor: 2n * price },
+            { position: 2, original: "1 x 24 port managed switch", description: "24 port managed switch", quantity: 1, matchConfidence: 0 },
+          ],
+        },
+      },
+    }));
+    const switchLine = await db.quoteLine.findFirstOrThrow({ where: { quoteId: review.id, position: 2 } });
+    await once(() => db.supplierPriceRequest.findUnique({ where: { reference: "RFQ-TEST01" } }), () => db.supplierPriceRequest.create({ data: { quoteId: review.id, supplierId: supplier.id, reference: "RFQ-TEST01", channel: "EMAIL", status: "SENT", lineIds: [switchLine.id], tokenHash: hash(rfqToken), tokenSealed: "browser-checks", deadline: new Date(Date.now() + 24 * 3_600_000), sentAt: new Date() } }));
+    const sent = await once(() => db.quote.findUnique({ where: { number: "QTEST2" } }), () => db.quote.create({
+      data: {
+        number: "QTEST2",
+        type: "TENDER",
+        source: "PORTAL",
+        status: "SENT",
+        marketCode: "bw",
+        currency: "BWP",
+        customerType: business.customerType,
+        userId: owner.userId,
+        organisationId: business.id,
+        email: owner.user.email,
+        name: owner.user.name,
+        companyName: business.name,
+        tenderReference: "DEMO/TND/001",
+        tenderDeadline: new Date(Date.now() + 10 * 24 * 3_600_000),
+        requiredDocuments: "Datasheets\nManufacturer warranty",
+        includeDocuments: true,
+        taxRateBps: 1400,
+        subtotalMinor: 3n * price,
+        taxMinor: (3n * price * 14n) / 100n,
+        totalMinor: 3n * price + (3n * price * 14n) / 100n,
+        costBaseMinor: 180_00n,
+        marginBps: 1500,
+        leadTimeDays: 5,
+        paymentTerms: "Payment by bank transfer before delivery.",
+        bankDetails: "Demo Bank (demo)\nAccount 000000000",
+        validUntil: new Date(Date.now() + 14 * 24 * 3_600_000),
+        accessTokenHash: hash(quoteToken),
+        sentAt: new Date(),
+        sentByLabel: "Automatically",
+        lines: { create: [{ position: 1, original: `3 x ${product.mpn}`, description: product.name, mpn: product.mpn, quantity: 3, productId: product.id, categoryId: product.categoryId, matchConfidence: 100, costSource: "CATALOGUE", supplierId: supplier.id, unitCostBaseMinor: 60_00n, leadTimeDays: 5, unitPriceMinor: price, lineTotalMinor: 3n * price }] },
+      },
+    }));
+    return { quote: review.id, quoteNumber: sent.number, quoteToken, rfqToken, business: business.id, product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken };
   } finally {
     await db.$disconnect();
   }

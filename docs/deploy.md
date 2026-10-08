@@ -56,7 +56,9 @@ ssh -t root@SERVER 'nano /opt/ictd/.env'
 Set `SMTP_URL` to the mail server the sign-in codes go out through, for
 example `smtps://no-reply%40ictdistribution.africa:PASSWORD@mail.ictdistribution.africa:465`
 (an `@` in the user name is written `%40`). The other lines can stay as
-they are for now; each is explained in the file.
+they are for now; each is explained in the file. Automated quotations
+work without more settings; to have Claude read requests and to take
+requests by email, see [quotes.md](quotes.md#setting-it-up).
 
 ### 4. GitHub secrets
 

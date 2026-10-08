@@ -13,7 +13,8 @@ import { appKey } from "@/server/secrets";
  * twice: it claims its rows before acting. Later milestones add theirs.
  */
 
-type Job = { name: string; cron?: string; run: () => Promise<unknown> };
+/** `inline` jobs run in the request when jobs are off (a test server), so their effect is still seen. */
+type Job = { name: string; cron?: string; inline?: boolean; run: () => Promise<unknown> };
 
 export function deliverEmail() {
   const e = env();
@@ -21,7 +22,33 @@ export function deliverEmail() {
 }
 
 const JOBS: Job[] = [
-  { name: "email-deliver", cron: "* * * * *", run: deliverEmail },
+  { name: "email-deliver", cron: "* * * * *", inline: true, run: deliverEmail },
+  {
+    // Requests for quote: read new ones, price those whose suppliers have answered or run out of time, expire old quotes, remind Sales of tenders.
+    name: "quotes",
+    cron: "*/5 * * * *",
+    inline: true,
+    run: async () => {
+      const { quoteTick } = await import("@/server/quotes/tick");
+      const result = await quoteTick(prisma, { key: appKey(), replyTo: env().QUOTES_EMAIL });
+      await deliverEmail();
+      return result;
+    },
+  },
+  {
+    // The quotes mailbox: emailed requests and supplier replies (docs/quotes.md). Off while IMAP_URL is unset.
+    name: "quote-mailbox",
+    cron: "*/2 * * * *",
+    run: async () => {
+      const e = env();
+      if (!e.IMAP_URL) return 0;
+      const { pollMailbox } = await import("@/server/quotes/mailbox");
+      const own = [e.QUOTES_EMAIL, /<([^>]+)>/.exec(e.MAIL_FROM)?.[1] ?? e.MAIL_FROM].filter((a): a is string => Boolean(a));
+      const n = await pollMailbox(prisma, { key: appKey(), replyTo: e.QUOTES_EMAIL, ownAddresses: own }, e.IMAP_URL);
+      if (n) await runSoon("quotes");
+      return n;
+    },
+  },
   {
     // Rates publish once a day; checking every six hours catches each new one the same day.
     name: "exchange-rates",
@@ -104,6 +131,6 @@ export function startJobs(): Promise<PgBoss | null> {
 export async function runSoon(name: string) {
   const boss = await startJobs();
   if (boss) await boss.send(name, {});
-  // With jobs off (a test server), send email in the request instead.
-  else if (name === "email-deliver") await deliverEmail();
+  // With jobs off (a test server), run it in the request instead.
+  else await JOBS.find((j) => j.name === name && j.inline)?.run();
 }
