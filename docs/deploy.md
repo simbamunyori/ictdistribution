@@ -15,11 +15,33 @@ Apache :443 ──▶ 127.0.0.1:3100 ──▶ app ──▶ PostgreSQL, Redis  
 
 ## One-time set-up
 
+### In one command
+
+From your own computer, inside a checkout of this repository, with the
+GitHub CLI signed in (`gh auth login`) and SSH access to the server as root:
+
+```sh
+deploy/go-live.sh SERVER you@ictdistribution.africa "Your Name"
+```
+
+It does steps 1 to 6 below for you. It waits until DNS points at the
+server, sets up the server, asks for the mail settings (and, if you have
+them, the Claude key and the off-site backup keys), adds the GitHub
+secrets, runs the first deploy and invites you as the first Admin. Run it
+again at any time: it skips what is already done. Set `SSH_PORT` first if
+SSH is not on port 22. On Windows, run it in WSL or Git Bash.
+
+The only things it can't do are the ones that need your own accounts:
+adding the two DNS records at your registrar, and making the mailbox
+and keys it asks for. It prints the DNS records to add.
+
+### Step by step
+
 Replace `SERVER` with the server's IP address in every command. Run them
 from your computer, inside a checkout of this repository, with the GitHub
 CLI signed in (`gh auth login`).
 
-### 1. DNS
+#### 1. DNS
 
 At the registrar for ictdistribution.africa, add two A records pointing at
 the server, and wait until both answer:
@@ -33,7 +55,7 @@ the server, and wait until both answer:
 dig +short ictdistribution.africa www.ictdistribution.africa
 ```
 
-### 2. The server
+#### 2. The server
 
 ```sh
 scp deploy/server-setup.sh deploy/apache-ictd.conf root@SERVER:/root/
@@ -47,7 +69,7 @@ again (for example once DNS has caught up). Keep `BACKUP_PASSPHRASE` from
 `/opt/ictd/.env` in the password manager: without it no backup can be
 restored.
 
-### 3. Settings
+#### 3. Settings
 
 ```sh
 ssh -t root@SERVER 'nano /opt/ictd/.env'
@@ -60,7 +82,7 @@ they are for now; each is explained in the file. Automated quotations
 work without more settings; to have Claude read requests and to take
 requests by email, see [quotes.md](quotes.md#setting-it-up).
 
-### 4. GitHub secrets
+#### 4. GitHub secrets
 
 ```sh
 gh secret set DEPLOY_HOST -R simbamunyori/ictdistribution --body "SERVER"
@@ -72,7 +94,7 @@ If SSH listens on a port other than 22, also run
 `gh secret set DEPLOY_PORT -R simbamunyori/ictdistribution --body "PORT"`
 and write `[SERVER]:PORT` instead of `SERVER` in the known-hosts line.
 
-### 5. The first deploy
+#### 5. The first deploy
 
 Merging the D1 pull request deploys it. To deploy `main` again by hand:
 
@@ -86,7 +108,7 @@ currencies, the four customer types and the first exchange rates. If it
 stops at "The app will refuse to start until these are fixed", it lists
 what to change in `/opt/ictd/.env`; fix it and run the workflow again.
 
-### 6. The first Admin
+#### 6. The first Admin
 
 ```sh
 ssh root@SERVER 'sudo -u deploy ictd create-admin "Your Name" you@ictdistribution.africa'
@@ -96,7 +118,7 @@ It emails the invitation and prints the link. Open it on the phone or
 computer you use for work and add a passkey. From then on, invite everyone
 else at https://ictdistribution.africa/admin/staff.
 
-### 7. Off-site backups (before real customers)
+#### 7. Off-site backups (before real customers)
 
 Until this is done, nightly backups stay on the server only. In the Contabo
 customer panel: **Object Storage > Create bucket**, name it `ictd-backups`,
@@ -115,6 +137,15 @@ ssh root@SERVER 'sudo -u deploy ictd restart && sudo -u deploy ictd restore-test
 
 The restore test ends with `restore-test: OK` once a backup has gone
 off-site and come back.
+
+## After going live
+
+Signed in as Admin at `/admin`, set the business up: invite staff
+(`/admin/staff`); for each market, the tax number, bank details and
+delivery (`/admin/markets`); markups (`/admin/customer-types`); suppliers
+and their price lists (`/admin/suppliers`); products (`/admin/products`);
+and the quote, purchase order, logistics, shop and finance rules. Each
+page is described in the guide for its area in this folder.
 
 ## Day to day
 
