@@ -53,6 +53,7 @@ export async function placeOrderAction(_prev: ActionState, form: FormData): Prom
     const { order, token } = await placeOrder(prisma, { key: appKey() }, cart.id, prices, { userId: s.user?.id ?? null, organisationId: s.organisation?.id ?? null, role: s.organisation?.role ?? null }, values);
     done = { number: order.number, token };
     await hit(redis(), `order:${ip}`, LIMITS.ordersPerIp);
+    if (order.status === "ON_ACCOUNT") await runSoon("procurement").catch(() => undefined);
     await runSoon("email-deliver").catch(() => undefined);
   }, values);
   if (done) {

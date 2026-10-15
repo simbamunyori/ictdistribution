@@ -18,7 +18,7 @@ const isLocalhost = (value: string) => /@localhost\b|\/\/localhost\b|\/\/127\.0\
 
 type PlaceholderEnv = Pick<Env, "APP_URL" | "MAIL_FROM" | "NODE_ENV"> & { SMTP_URL?: string | null };
 
-type PlaceholderDb = Pick<PrismaClient, "user" | "market" | "exchangeRate" | "supplier" | "product" | "collectionPoint" | "special">;
+type PlaceholderDb = Pick<PrismaClient, "user" | "market" | "exchangeRate" | "supplier" | "product" | "collectionPoint" | "special" | "procurementSettings">;
 
 export async function findPlaceholders(db: PlaceholderDb, e: PlaceholderEnv): Promise<string[]> {
   const found: string[] = [];
@@ -31,6 +31,8 @@ export async function findPlaceholders(db: PlaceholderDb, e: PlaceholderEnv): Pr
   }
   const demoPoints = await db.collectionPoint.count({ where: { name: { endsWith: DEMO_SUFFIX }, active: true } });
   if (demoPoints) found.push(`${demoPoints} demo collection ${demoPoints === 1 ? "point is" : "points are"} open. Close them at /admin/markets.`);
+  const procurement = await db.procurementSettings.findUnique({ where: { id: "global" } });
+  if (procurement?.deliverTo.includes(DEMO_SUFFIX)) found.push("The delivery address on purchase orders is a demo. Set it at /admin/purchase-orders/rules.");
   const seeded = await db.exchangeRate.count({ where: { source: "seed" } });
   if (seeded) found.push(`${seeded} exchange ${seeded === 1 ? "rate is a demo value" : "rates are demo values"}. Fetch real ones at /admin/exchange-rates, or remove them.`);
   const demo = await db.user.findMany({ where: { email: { in: DEMO_EMAILS } }, select: { email: true } });

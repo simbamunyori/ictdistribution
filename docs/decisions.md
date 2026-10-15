@@ -138,3 +138,29 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
 - **Quote numbers** run from Q-100001 on their own sequence, separate
   from order numbers.
 
+
+## D6
+
+- **Purchase orders wait for approval by default.** Sending by itself is
+  off until the Admin switches it on at `/admin/purchase-orders/rules`,
+  with a value limit (2,000 in the base currency to start) and preferred
+  suppliers only. Money leaving the business stays a human decision
+  until the Admin decides otherwise.
+- **Purchase orders are made when the order is paid or on account**, not
+  when it is placed, so nothing is bought for an order that is never paid.
+- **A quote's supplier and cost carry into the order.** The purchase order
+  goes to the supplier we priced with, at the cost they gave, even if the
+  sourcing rule would pick someone else today. Shop orders use the
+  sourcing rule at the time of purchase.
+- **Orders from quotes keep quote pricing**: prices before tax, tax on
+  the total, delivery included as quoted. Shop orders keep prices with
+  tax.
+- **Supplier links never expire** while the purchase order is open, like
+  request-for-price links. They show only our order: no customer, no
+  order number, no selling price.
+- **Supplier files are kept in the database**, as company documents are,
+  so backups include them.
+- **Every order goes to a supplier for now.** Whether some lines come from
+  our own stock instead of being bought per order is still to be decided;
+  until then a line nobody supplies is flagged to Procurement to buy by
+  hand.

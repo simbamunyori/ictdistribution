@@ -32,6 +32,8 @@ export const LIMITS = {
   quotesPerUser: { max: 20, windowMs: 60 * 60_000 },
   /** Answers on supplier response pages and quote acceptances from one address. */
   quoteAnswersPerIp: { max: 30, windowMs: 10 * 60_000 },
+  /** Confirmations, shipping details and files on supplier purchase order pages from one address. */
+  poAnswersPerIp: { max: 40, windowMs: 10 * 60_000 },
 } satisfies Record<string, Limit>;
 
 export class RateLimitedError extends Error {

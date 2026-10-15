@@ -8,6 +8,8 @@ import { Alert } from "@/components/ui/alert";
 import { prisma } from "@/server/db";
 import { can } from "@/server/org/access";
 import { quoteByToken, quoteForCustomer } from "@/server/quotes/customer";
+import { checkoutOptions } from "@/server/shop/orders";
+import { formatMoney } from "@/lib/money";
 import { shopper } from "@/server/shop/viewer";
 
 export const metadata: Metadata = { title: "Your quote", robots: { index: false }, referrer: "no-referrer" };
@@ -21,6 +23,7 @@ export default async function QuotePage({ params, searchParams }: { params: Prom
   if (!quote) notFound();
   const answerable = quote.status === "SENT" && (!quote.validUntil || quote.validUntil.getTime() > new Date().getTime());
   const mayBuy = Boolean(byLink) || !quote.organisationId || Boolean(s.organisation && can({ role: s.organisation.role }, "buy"));
+  const choices = answerable && mayBuy ? await acceptChoices(quote) : null;
   const pdfHref = `/quotes/${encodeURIComponent(quote.number)}/pdf${byLink ? `?t=${encodeURIComponent(token)}` : ""}`;
   return (
     <SiteFrame>
@@ -42,8 +45,8 @@ export default async function QuotePage({ params, searchParams }: { params: Prom
             </h2>
             {mayBuy ? (
               <>
-                <p className="mt-2 mb-4 text-callout">Accept it and we send your pro forma invoice. Prices hold until the date above.</p>
-                <AnswerQuoteForms number={quote.number} token={byLink ? token : ""} />
+                <p className="mt-2 mb-4 text-callout">Accept it and it becomes your order, with a pro forma invoice to pay or on your account. Prices hold until the date above.</p>
+                <AnswerQuoteForms number={quote.number} token={byLink ? token : ""} choices={choices!} />
               </>
             ) : (
               <p className="mt-2 text-callout">Your role doesn&apos;t allow accepting quotes. Ask an Owner or a Buyer on your team.</p>
@@ -71,3 +74,12 @@ export default async function QuotePage({ params, searchParams }: { params: Prom
     </SiteFrame>
   );
 }
+
+/** Delivery, collection and payment the customer can choose when accepting. */
+async function acceptChoices(q: NonNullable<Awaited<ReturnType<typeof quoteByToken>>>) {
+  const [{ points, bankTransfer, account }, shop] = await Promise.all([checkoutOptions(prisma, q.marketCode, q.organisationId), prisma.shopSettings.findUnique({ where: { id: "global" } })]);
+  const total = q.totalMinor === null ? "" : formatMoney({ amountMinor: q.totalMinor, currency: q.currency }, q.market.locale);
+  const enough = account && q.totalMinor !== null && account.available >= q.totalMinor;
+  return { points: points.map((p) => ({ id: p.id, name: p.name, address: p.address, hours: p.hours })), bankTransfer, account: enough && account.termsDays ? { termsDays: account.termsDays } : null, payDays: shop?.payDays ?? 3, phone: q.phone, total };
+}
+

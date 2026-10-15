@@ -66,6 +66,8 @@ async function approvedReseller(): Promise<Org> {
 }
 
 const ask = (o: Partial<QuoteRequestInput> = {}): QuoteRequestInput => ({ type: "STANDARD", text: "", urgent: false, customerReference: "", tenderReference: "", tenderDeadline: "", requiredDocuments: "", phone: "", ...o });
+/** How a customer takes an accepted quote: delivered, paid by bank transfer. */
+const take = { phone: "+26771234567", fulfilment: "DELIVERY", addressLine1: "Plot 9", addressLine2: "", city: "Gaborone", postalCode: "", collectionPointId: "", paymentMethod: "BANK_TRANSFER", notes: "" };
 const who = (org: Org) => ({ userId: org.owner.userId, organisationId: org.organisationId, role: org.owner.role });
 
 /** Asks for a quote and runs the job until it settles. */
@@ -280,9 +282,10 @@ describe.skipIf(!hasDb)("answering and tracking", () => {
     const q = await quoteFor(reseller, { text: `2 x ${a.mpn}` });
     expect(q.status).toBe("SENT");
     const { token } = await lastSecret(reseller.email, "quote.sent");
-    await expect(acceptQuote(db, deps, q.number, { token: "nope" })).rejects.toThrow(/No such quote/);
-    await acceptQuote(db, deps, q.number, { token });
+    await expect(acceptQuote(db, deps, q.number, { token: "nope" }, take)).rejects.toThrow(/No such quote/);
+    const { order } = await acceptQuote(db, deps, q.number, { token }, take);
     expect((await getQuote(db, q.id)).status).toBe("ACCEPTED");
+    expect(order).toMatchObject({ quoteId: q.id, status: "AWAITING_PAYMENT", totalMinor: q.totalMinor, pricesIncludeTax: false });
     expect(await db.outboundEmail.count({ where: { toAddress: sales.email, kind: "quote.answered" } })).toBeGreaterThan(0);
     await expect(declineQuote(db, deps, q.number, { token }, "Too dear")).rejects.toThrow(/already accepted/);
     const seen = await db.auditEvent.findMany({ where: { organisationId: reseller.organisationId, targetId: q.id, visibleToCustomer: true }, select: { action: true } });
@@ -292,7 +295,7 @@ describe.skipIf(!hasDb)("answering and tracking", () => {
   it("lets only a member who buys answer from their account, and expires quotes nobody answered", async () => {
     const a = await product("70.00");
     const q = await quoteFor(reseller, { text: `1 x ${a.mpn}` });
-    await expect(acceptQuote(db, deps, q.number, { viewer: { userId: "x", organisationId: reseller.organisationId, role: "VIEWER", name: "Viewer" } })).rejects.toThrow(/role/);
+    await expect(acceptQuote(db, deps, q.number, { viewer: { userId: "x", organisationId: reseller.organisationId, role: "VIEWER", name: "Viewer" } }, take)).rejects.toThrow(/role/);
     await declineQuote(db, deps, q.number, { viewer: { userId: reseller.owner.userId, organisationId: reseller.organisationId, role: "OWNER", name: "Neo Kgosi" } }, "Went with another option");
     expect((await getQuote(db, q.id)).declineReason).toBe("Went with another option");
 

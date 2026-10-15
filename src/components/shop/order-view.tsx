@@ -7,7 +7,7 @@ import { orderStateText, PAYMENT_LABEL } from "@/server/shop/orders";
 export type ViewableOrder = Order & { lines: OrderLine[]; payments: OrderPayment[]; market: { locale: string; timeZone: string; name: string } };
 
 /** An order as the customer sees it: never costs or suppliers. */
-export function OrderView({ order: o, staff = false }: { order: ViewableOrder; staff?: boolean }) {
+export function OrderView({ order: o, staff = false, proFormaHref }: { order: ViewableOrder; staff?: boolean; proFormaHref?: string }) {
   const { locale, timeZone } = o.market;
   const money = (amountMinor: bigint) => formatMoney({ amountMinor, currency: o.currency }, locale);
   const paid = o.payments.reduce((s, p) => s + p.amountMinor, 0n);
@@ -28,6 +28,13 @@ export function OrderView({ order: o, staff = false }: { order: ViewableOrder; s
           <dd className="mt-1 font-bold tabular-nums">{money(o.totalMinor)}</dd>
         </div>
       </dl>
+      {proFormaHref ? (
+        <p className="-mt-2 text-callout">
+          <a href={proFormaHref} className="text-link underline underline-offset-4">
+            Download the pro forma invoice (PDF)
+          </a>
+        </p>
+      ) : null}
 
       {o.status === "CANCELLED" ? (
         <Alert>
@@ -45,6 +52,7 @@ export function OrderView({ order: o, staff = false }: { order: ViewableOrder; s
             {o.paymentMethod === "ACCOUNT" ? "It is on your account, so we send it before it is paid." : "Unpaid orders are cancelled after that date."}
           </p>
           <p className="mt-3 rounded-md bg-surface p-4 font-mono text-callout whitespace-pre-line">{o.bankDetails}</p>
+
           {paid > 0n ? <p className="mt-3 text-callout text-ink-muted">We have received {money(paid)} so far.</p> : null}
         </section>
       ) : null}
@@ -53,7 +61,8 @@ export function OrderView({ order: o, staff = false }: { order: ViewableOrder; s
         <h2 id="items" className="text-headline font-bold">
           Items
         </h2>
-        <div className="mt-3 overflow-x-auto rounded-lg border border-line">
+        {o.pricesIncludeTax ? null : <p className="mt-1 text-callout text-ink-muted">As quoted: prices per unit before {o.taxName}, with {o.taxName} added on the total.</p>}
+        <div role="region" aria-label="Items in this order" tabIndex={0} className="mt-3 overflow-x-auto rounded-lg border border-line">
           <table className="w-full text-left text-callout">
             <thead className="bg-surface text-caption text-ink-muted uppercase">
               <tr>
@@ -82,30 +91,51 @@ export function OrderView({ order: o, staff = false }: { order: ViewableOrder; s
               ))}
             </tbody>
             <tfoot className="bg-raised">
-              <tr className="border-t border-line">
-                <th scope="row" colSpan={2} className="px-4 py-2 text-right font-normal">
-                  Items
-                </th>
-                <td className="px-4 py-2 text-right tabular-nums">{money(o.subtotalMinor)}</td>
-              </tr>
-              <tr>
-                <th scope="row" colSpan={2} className="px-4 py-2 text-right font-normal">
-                  {o.fulfilment === "DELIVERY" ? "Delivery" : "Collection"}
-                </th>
-                <td className="px-4 py-2 text-right tabular-nums">{o.deliveryMinor > 0n ? money(o.deliveryMinor) : "Free"}</td>
-              </tr>
+              {o.pricesIncludeTax ? (
+                <>
+                  <tr className="border-t border-line">
+                    <th scope="row" colSpan={2} className="px-4 py-2 text-right font-normal">
+                      Items
+                    </th>
+                    <td className="px-4 py-2 text-right tabular-nums">{money(o.subtotalMinor)}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row" colSpan={2} className="px-4 py-2 text-right font-normal">
+                      {o.fulfilment === "DELIVERY" ? "Delivery" : "Collection"}
+                    </th>
+                    <td className="px-4 py-2 text-right tabular-nums">{o.deliveryMinor > 0n ? money(o.deliveryMinor) : "Free"}</td>
+                  </tr>
+                </>
+              ) : (
+                <>
+                  <tr className="border-t border-line">
+                    <th scope="row" colSpan={2} className="px-4 py-2 text-right font-normal">
+                      Subtotal
+                    </th>
+                    <td className="px-4 py-2 text-right tabular-nums">{money(o.subtotalMinor)}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row" colSpan={2} className="px-4 py-2 text-right font-normal">
+                      {o.taxName} {o.taxRateBps / 100}%
+                    </th>
+                    <td className="px-4 py-2 text-right tabular-nums">{money(o.taxMinor)}</td>
+                  </tr>
+                </>
+              )}
               <tr>
                 <th scope="row" colSpan={2} className="px-4 py-2 text-right">
                   Total
                 </th>
                 <td className="px-4 py-2 text-right font-bold tabular-nums">{money(o.totalMinor)}</td>
               </tr>
-              <tr>
-                <th scope="row" colSpan={2} className="px-4 pb-3 text-right text-caption font-normal text-ink-muted">
-                  Includes {o.taxName}
-                </th>
-                <td className="px-4 pb-3 text-right text-caption text-ink-muted tabular-nums">{money(o.taxMinor)}</td>
-              </tr>
+              {o.pricesIncludeTax ? (
+                <tr>
+                  <th scope="row" colSpan={2} className="px-4 pb-3 text-right text-caption font-normal text-ink-muted">
+                    Includes {o.taxName}
+                  </th>
+                  <td className="px-4 pb-3 text-right text-caption text-ink-muted tabular-nums">{money(o.taxMinor)}</td>
+                </tr>
+              ) : null}
             </tfoot>
           </table>
         </div>

@@ -28,7 +28,7 @@ export interface CheckoutPrefill {
   phone: string;
 }
 
-function Choice({ name, value, checked, onChange, label, hint, disabled }: { name: string; value: string; checked: boolean; onChange?: () => void; label: string; hint?: string; disabled?: boolean }) {
+export function Choice({ name, value, checked, onChange, label, hint, disabled }: { name: string; value: string; checked: boolean; onChange?: () => void; label: string; hint?: string; disabled?: boolean }) {
   const id = `${name}-${value}`;
   return (
     <div className={cn("flex items-start gap-3 rounded-md border border-line bg-raised p-4", checked && "border-brand", disabled && "opacity-60")}>
@@ -47,7 +47,7 @@ function Choice({ name, value, checked, onChange, label, hint, disabled }: { nam
   );
 }
 
-function Group({ legend, error, children }: { legend: string; error?: string; children: React.ReactNode }) {
+export function Group({ legend, error, children }: { legend: string; error?: string; children: React.ReactNode }) {
   return (
     <fieldset className="flex flex-col gap-3">
       <legend className="mb-3 text-headline font-bold">{legend}</legend>

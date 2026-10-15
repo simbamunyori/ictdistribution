@@ -84,6 +84,9 @@ The integration tests empty and reseed `TEST_DATABASE_URL` (it must end in
 | Credit terms and orders on account | `src/server/accounts/credit.ts` | /admin/credit |
 | Quotes: intake, pricing, supplier requests, PDF | `src/server/quotes/` | /admin/quotes |
 | Quote prices and automation rules (pure) | `src/lib/quote-pricing.ts` | /admin/quotes/rules |
+| Orders from quotes and pro forma invoices | `src/server/shop/orders.ts`, `src/server/shop/pro-forma.ts` | /admin/orders |
+| Purchase orders, approval and supplier pages | `src/server/procurement/` | /admin/purchase-orders |
+| Purchase order rules (pure) | `src/lib/procurement.ts` | /admin/purchase-orders/rules |
 | Background jobs | `src/server/jobs/boss.ts` | |
 
 Business rules (markups, buffers, rounding, rate rules, sourcing rules, who is staff) live
@@ -98,5 +101,7 @@ Microsoft and Google: [docs/sign-in-setup.md](docs/sign-in-setup.md).
 Exchange rates: [docs/exchange-rates.md](docs/exchange-rates.md). The
 catalogue, suppliers and price list imports: [docs/catalogue.md](docs/catalogue.md). The
 shop, specials and orders: [docs/shop.md](docs/shop.md). Business
-customers, trade prices and credit: [docs/business.md](docs/business.md). Choices
+customers, trade prices and credit: [docs/business.md](docs/business.md). Quotes:
+[docs/quotes.md](docs/quotes.md). Orders, purchase orders and suppliers'
+pages: [docs/procurement.md](docs/procurement.md). Choices
 made along the way: [docs/decisions.md](docs/decisions.md).

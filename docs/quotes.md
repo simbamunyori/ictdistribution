@@ -67,8 +67,11 @@ delivery, validity, payment terms and bank details), with an **Accept**
 button on both. The customer
 can also see and accept it under **Account > Quotes**. Payment terms are
 "on account" for organisations with open credit, and bank transfer
-before delivery otherwise. Accepting tells sales by email; the order is
-made from it in D6.
+before delivery otherwise. Accepting asks for delivery or collection, a
+phone number and how to pay, and turns the quote into an order at the
+quoted prices: on account straight away when the credit covers it, or by
+bank transfer against a pro forma invoice. Sales hear by email. What
+happens next is in [procurement.md](procurement.md).
 
 ## Checking a quote (staff)
 

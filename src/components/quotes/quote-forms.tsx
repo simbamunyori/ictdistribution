@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { acceptQuoteAction, declineQuoteAction, requestQuoteAction } from "@/app/(site)/quote-actions";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Choice, Group } from "@/components/shop/checkout-form";
 import { CheckboxField, FileField, TextAreaField, TextField } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import type { ActionState } from "@/server/action-state";
@@ -90,21 +91,64 @@ export function QuoteRequestForm({ types, marketName, canTender }: { types: Type
   );
 }
 
-/** Accept or decline a quote. `token` is the emailed link's, when the page was opened with it. */
-export function AnswerQuoteForms({ number, token }: { number: string; token: string }) {
+export interface AcceptChoices {
+  points: { id: string; name: string; address: string; hours: string }[];
+  bankTransfer: boolean;
+  /** Credit open to the business, when it is. */
+  account: { termsDays: number } | null;
+  payDays: number;
+  phone: string;
+  total: string;
+}
+
+/**
+ * Accept a quote, saying how it reaches you and how you pay, or decline
+ * it. `token` is the emailed link's, when the page was opened with it.
+ */
+export function AnswerQuoteForms({ number, token, choices }: { number: string; token: string; choices: AcceptChoices }) {
   const [accepted, accept, accepting] = useActionState(acceptQuoteAction, initial);
   const [declined, decline, declining] = useActionState(declineQuoteAction, initial);
   const [declineOpen, setDeclineOpen] = useState(false);
-  if (accepted.ok || declined.ok) return <Result state={accepted.ok ? accepted : declined} />;
+  const v = accepted.values ?? {};
+  const err = accepted.fieldErrors ?? {};
+  const [fulfilment, setFulfilment] = useState(v.fulfilment || "DELIVERY");
+  const [point, setPoint] = useState(v.collectionPointId || (choices.points.length === 1 ? choices.points[0].id : ""));
+  const [payment, setPayment] = useState(v.paymentMethod || (choices.account ? "ACCOUNT" : "BANK_TRANSFER"));
+  if (declined.ok) return <Result state={declined} />;
   return (
-    <div className="flex flex-col gap-4">
-      <form action={accept} className="flex flex-col gap-3">
+    <div className="flex flex-col gap-6">
+      <form action={accept} className="flex flex-col gap-6" noValidate>
         <input type="hidden" name="number" value={number} />
         <input type="hidden" name="t" value={token} />
+        <Group legend="Delivery or collection" error={err.fulfilment}>
+          <Choice name="fulfilment" value="DELIVERY" checked={fulfilment === "DELIVERY"} onChange={() => setFulfilment("DELIVERY")} label="Deliver to us" hint="As quoted, at no extra charge." />
+          {choices.points.length ? <Choice name="fulfilment" value="COLLECTION" checked={fulfilment === "COLLECTION"} onChange={() => setFulfilment("COLLECTION")} label="We collect it" /> : null}
+        </Group>
+        {fulfilment === "DELIVERY" ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField id="addressLine1" label="Street address or plot" autoComplete="address-line1" defaultValue={v.addressLine1 ?? ""} error={err.addressLine1} className="sm:col-span-2" />
+            <TextField id="addressLine2" label="Building, unit or area (optional)" autoComplete="address-line2" defaultValue={v.addressLine2 ?? ""} error={err.addressLine2} className="sm:col-span-2" />
+            <TextField id="city" label="Town or city" autoComplete="address-level2" defaultValue={v.city ?? ""} error={err.city} />
+            <TextField id="postalCode" label="Postal code (optional)" autoComplete="postal-code" defaultValue={v.postalCode ?? ""} error={err.postalCode} />
+          </div>
+        ) : (
+          <Group legend="Where to collect" error={err.collectionPointId}>
+            {choices.points.map((p) => (
+              <Choice key={p.id} name="collectionPointId" value={p.id} checked={point === p.id} onChange={() => setPoint(p.id)} label={p.name} hint={[p.address, p.hours].filter(Boolean).join("\n")} />
+            ))}
+          </Group>
+        )}
+        <TextField id="phone" label="Phone" type="tel" autoComplete="tel" defaultValue={v.phone ?? choices.phone} error={err.phone} hint="For delivery or collection." />
+        <Group legend="Payment" error={err.paymentMethod}>
+          {choices.account ? <Choice name="paymentMethod" value="ACCOUNT" checked={payment === "ACCOUNT"} onChange={() => setPayment("ACCOUNT")} label="On account" hint={`Pay within ${choices.account.termsDays} days. We order it straight away.`} /> : null}
+          {choices.bankTransfer ? <Choice name="paymentMethod" value="BANK_TRANSFER" checked={payment === "BANK_TRANSFER"} onChange={() => setPayment("BANK_TRANSFER")} label="Bank transfer" hint={`Pay the pro forma invoice within ${choices.payDays} ${choices.payDays === 1 ? "day" : "days"}; we order it when the money arrives.`} /> : null}
+          {!choices.account && !choices.bankTransfer ? <p className="text-callout">Reply to the quote email and we will arrange payment.</p> : null}
+        </Group>
+        <TextAreaField id="notes" label="Anything we should know (optional)" rows={3} defaultValue={v.notes ?? ""} error={err.notes} hint="Such as delivery times or directions." />
         <Result state={accepted} />
         <div className="flex flex-wrap gap-3">
-          <Button type="submit" size="lg" disabled={accepting}>
-            {accepting ? "Accepting" : "Accept the quote"}
+          <Button type="submit" size="lg" disabled={accepting || (!choices.account && !choices.bankTransfer)}>
+            {accepting ? "Placing your order" : `Accept and order for ${choices.total}`}
           </Button>
           <Button variant="secondary" size="lg" onClick={() => setDeclineOpen((o) => !o)} aria-expanded={declineOpen} aria-controls="decline-form">
             Decline

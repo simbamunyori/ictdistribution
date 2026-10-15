@@ -202,6 +202,7 @@ export async function recordPaymentAction(_: ActionState, form: FormData): Promi
   const values = pick(form, ["amount", "reference", "receivedOn"]);
   const result = await run(async () => {
     await recordPayment(prisma, actor, { key: appKey() }, id, { amount: values.amount, reference: values.reference, receivedOn: values.receivedOn }, ip);
+    await runSoon("procurement").catch(() => undefined);
     await runSoon("email-deliver").catch(() => undefined);
     return "Recorded.";
   }, values);

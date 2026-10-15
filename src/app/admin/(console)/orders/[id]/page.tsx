@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { CancelOrderForm, FulfilForm, PaymentForm } from "@/components/admin/shop-forms";
 import { OrderView } from "@/components/shop/order-view";
+import { Alert } from "@/components/ui/alert";
 import { Badge, Card, PageHeader, TableWrap, td, th } from "@/components/ui/card";
 import { cn } from "@/lib/cn";
 import { formatMoney, toPlainAmount } from "@/lib/money";
@@ -10,6 +11,7 @@ import { formatDate, formatDateTime } from "@/lib/zoned";
 import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
 import { pricingSettings } from "@/server/pricing/rates";
+import { PO_STATUS_LABEL, PO_STATUS_TONE } from "@/server/procurement/common";
 import { ORDER_STATUS_LABEL, TO_SEND } from "@/server/shop/orders";
 import { staffCan } from "@/server/staff/access";
 
@@ -22,7 +24,17 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const session = await requireStaff();
   const role = { staffRole: session.user.staffRole };
   if (!staffCan(role, "viewOrders")) redirect("/admin");
-  const order = await prisma.order.findUnique({ where: { id }, include: { lines: { orderBy: { sortOrder: "asc" } }, payments: { orderBy: { receivedOn: "asc" } }, market: true, organisation: { select: { id: true, name: true } } } });
+  const order = await prisma.order.findUnique({
+    where: { id },
+    include: {
+      lines: { orderBy: { sortOrder: "asc" }, include: { poLines: { where: { purchaseOrder: { status: { not: "CANCELLED" } } }, select: { id: true } } } },
+      payments: { orderBy: { receivedOn: "asc" } },
+      market: true,
+      organisation: { select: { id: true, name: true } },
+      quote: { select: { id: true, number: true } },
+      purchaseOrders: { orderBy: { createdAt: "asc" }, include: { supplier: { select: { name: true } } } },
+    },
+  });
   if (!order) notFound();
   const { locale, timeZone } = order.market;
   const money = (amountMinor: bigint, currency = order.currency) => formatMoney({ amountMinor, currency }, locale);
@@ -33,6 +45,8 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const cost = order.lines.reduce((s, l) => (l.unitCostBaseMinor === null ? s : s + l.unitCostBaseMinor * BigInt(l.quantity)), 0n);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const open = order.status === "AWAITING_PAYMENT" || TO_SEND.includes(order.status);
+  // Lines no live purchase order covers, once purchase orders were made.
+  const unbought = order.procuredAt ? order.lines.filter((l) => !l.poLines.length) : [];
   // On account, money can arrive before or after it is sent.
   const takesPayment = order.status === "AWAITING_PAYMENT" || (order.paymentMethod === "ACCOUNT" && order.status !== "CANCELLED" && order.paidAt === null);
   return (
@@ -59,7 +73,16 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             ) : (
               ", as a guest"
             )}
-            {order.customerReference ? `, their reference ${order.customerReference}` : ""}.
+            {order.customerReference ? `, their reference ${order.customerReference}` : ""}
+            {order.quote ? (
+              <>
+                , from quote{" "}
+                <Link href={`/admin/quotes/${order.quote.id}`} className="text-link underline underline-offset-4">
+                  {order.quote.number}
+                </Link>
+              </>
+            ) : null}
+            .
           </>
         }
       />
@@ -81,7 +104,33 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           </Card>
         ) : null}
 
-        <OrderView order={order} staff />
+        <OrderView order={order} staff proFormaHref={`/admin/orders/${order.id}/pro-forma`} />
+
+        {staffCan(role, "viewPurchaseOrders") && order.procuredAt ? (
+          <Card>
+            <h2 className="text-headline font-bold">Purchase orders</h2>
+            {order.purchaseOrders.length ? (
+              <ul className="mt-3 flex flex-col gap-2 text-callout">
+                {order.purchaseOrders.map((p) => (
+                  <li key={p.id} className="flex flex-wrap items-center gap-2">
+                    <Link href={`/admin/purchase-orders/${p.id}`} className="font-semibold text-link underline underline-offset-4">
+                      {p.number}
+                    </Link>
+                    <span>
+                      to {p.supplier.name}, {formatMoney({ amountMinor: p.totalMinor, currency: p.currency }, locale)}
+                    </span>
+                    <Badge tone={PO_STATUS_TONE[p.status]}>{PO_STATUS_LABEL[p.status]}</Badge>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {unbought.length ? (
+              <Alert tone="warning" className="mt-3">
+                No supplier for {unbought.map((l) => l.description).join(", ")}. Buy {unbought.length === 1 ? "it" : "them"} by hand, or add a supplier offer and make a purchase order.
+              </Alert>
+            ) : null}
+          </Card>
+        ) : null}
 
         {order.payments.length ? (
           <Card>

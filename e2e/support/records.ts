@@ -6,9 +6,10 @@ import { PrismaClient } from "@prisma/client";
  * product, supplier and category, two demo price lists (one waiting
  * for its columns, one ready for review), a demo special, a demo
  * order with a known link, and the demo business with a document, a credit
- * application and a volume break at its level, and two demo quotes (one
+ * application and a volume break at its level, two demo quotes (one
  * waiting for a check with a supplier request, one sent to the business),
- * made here when missing.
+ * and a paid order with two purchase orders (one sent with a known link,
+ * one waiting for approval), made here when missing.
  * Development and CI databases only.
  */
 let cached: Promise<Record<string, string>> | null = null;
@@ -150,7 +151,40 @@ async function load(): Promise<Record<string, string>> {
         lines: { create: [{ position: 1, original: `3 x ${product.mpn}`, description: product.name, mpn: product.mpn, quantity: 3, productId: product.id, categoryId: product.categoryId, matchConfidence: 100, costSource: "CATALOGUE", supplierId: supplier.id, unitCostBaseMinor: 60_00n, leadTimeDays: 5, unitPriceMinor: price, lineTotalMinor: 3n * price }] },
       },
     }));
-    return { quote: review.id, quoteNumber: sent.number, quoteToken, rfqToken, business: business.id, product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken };
+    // An order paid and bought from its supplier: one purchase order sent, with a known link, and one waiting for approval.
+    const poToken = "browser-checks-po";
+    const procured = await once(() => db.order.findUnique({ where: { number: "ICT-TEST-2" } }), () => db.order.create({
+      data: {
+        number: "ICT-TEST-2",
+        status: "PAID",
+        marketCode: "bw",
+        currency: "BWP",
+        customerType: "INDIVIDUAL",
+        email: "paid@example.co.bw",
+        name: "Mpho Paid",
+        phone: "+26771234567",
+        fulfilment: "DELIVERY",
+        addressLine1: "Plot 7, Tlokweng",
+        city: "Gaborone",
+        paymentMethod: "BANK_TRANSFER",
+        subtotalMinor: 2_000_00n,
+        deliveryMinor: 0n,
+        totalMinor: 2_000_00n,
+        taxMinor: 245_61n,
+        taxName: "VAT",
+        taxRateBps: 1400,
+        accessTokenHash: hash("browser-checks-paid-order"),
+        paidAt: new Date(),
+        procuredAt: new Date(),
+        lines: { create: [{ productId: product.id, description: product.name, mpn: product.mpn, quantity: 2, unitPriceMinor: 1_000_00n, lineTotalMinor: 2_000_00n, supplierId: supplier.id, supplierCostMinor: 60_00n, supplierCurrency: supplier.currency }] },
+      },
+      include: { lines: true },
+    }));
+    const procuredLine = await db.orderLine.findFirstOrThrow({ where: { orderId: procured.id } });
+    const poLine = { orderLineId: procuredLine.id, position: 1, description: product.name, mpn: product.mpn, quantity: 2, unitCostMinor: 60_00n, lineTotalMinor: 120_00n };
+    const sentPo = await once(() => db.purchaseOrder.findUnique({ where: { number: "PO-TEST1" } }), () => db.purchaseOrder.create({ data: { number: "PO-TEST1", orderId: procured.id, supplierId: supplier.id, status: "SENT", channel: "EMAIL", currency: supplier.currency, totalMinor: 120_00n, totalBaseMinor: 120_00n, tokenHash: hash(poToken), tokenSealed: "browser-checks", sentAt: new Date(), lines: { create: [poLine] } } }));
+    const waitingPo = await once(() => db.purchaseOrder.findUnique({ where: { number: "PO-TEST2" } }), () => db.purchaseOrder.create({ data: { number: "PO-TEST2", orderId: procured.id, supplierId: supplier.id, status: "AWAITING_APPROVAL", channel: "EMAIL", currency: supplier.currency, totalMinor: 120_00n, totalBaseMinor: 120_00n, reviewReasons: "Sending by itself is switched off.", tokenHash: hash("browser-checks-po-2"), tokenSealed: "browser-checks", lines: { create: [poLine] } } }));
+    return { procuredOrder: procured.id, sentPo: sentPo.id, waitingPo: waitingPo.id, poToken, quote: review.id, quoteNumber: sent.number, quoteToken, rfqToken, business: business.id, product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken };
   } finally {
     await db.$disconnect();
   }

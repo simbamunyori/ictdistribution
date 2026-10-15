@@ -49,17 +49,24 @@ async function answerer(form: FormData): Promise<Answerer> {
   return { viewer: { userId: session.userId, organisationId: actor?.organisationId ?? null, role: actor?.role ?? null, name: session.user.name } };
 }
 
+const ACCEPT_FIELDS = ["phone", "fulfilment", "addressLine1", "addressLine2", "city", "postalCode", "collectionPointId", "paymentMethod", "notes"] as const;
+
 export async function acceptQuoteAction(_: ActionState, form: FormData): Promise<ActionState> {
   const number = field(form, "number");
   const ip = (await requestContext()).ipAddress ?? null;
+  const values = Object.fromEntries(ACCEPT_FIELDS.map((k) => [k, field(form, k)])) as Record<(typeof ACCEPT_FIELDS)[number], string>;
+  let placed: { number: string; token: string } | null = null;
   const result = await run(async () => {
     await enforce(redis(), `quote-answer:${ip ?? "unknown"}`, LIMITS.quoteAnswersPerIp);
-    await acceptQuote(prisma, deps(), number, await answerer(form), ip);
-    return "Accepted. Thank you: we will send your pro forma invoice and confirm delivery.";
-  });
-  if (result.ok) await runSoon("email-deliver").catch(() => undefined);
+    const { order, token } = await acceptQuote(prisma, deps(), number, await answerer(form), values, ip);
+    placed = { number: order.number, token };
+  }, values);
+  if (!result.ok || !placed) return result;
+  await runSoon("email-deliver").catch(() => undefined);
   revalidatePath(`/quotes/${number}`);
-  return result;
+  revalidatePath("/account/orders");
+  const p = placed as { number: string; token: string };
+  redirect(`/orders/${encodeURIComponent(p.number)}?t=${encodeURIComponent(p.token)}&placed=1`);
 }
 
 export async function declineQuoteAction(_: ActionState, form: FormData): Promise<ActionState> {

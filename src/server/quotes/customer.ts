@@ -5,6 +5,8 @@ import { hashToken } from "@/server/auth/tokens";
 import { queueEmail } from "@/server/email/outbox";
 import { DomainError } from "@/server/errors";
 import { can } from "@/server/org/access";
+import { startProcurement } from "@/server/procurement/purchase-orders";
+import { orderFromQuote, type QuoteOrderDetails } from "@/server/shop/orders";
 import { salesAddresses, type QuoteDeps } from "./common";
 
 /**
@@ -74,7 +76,7 @@ export interface Answerer {
 }
 
 async function answerable(tx: Prisma.TransactionClient, number: string, who: Answerer, now: Date) {
-  const q = await tx.quote.findUnique({ where: { number }, include: { market: true } });
+  const q = await tx.quote.findUnique({ where: { number }, include: { market: true, lines: { orderBy: { position: "asc" }, include: { responses: { include: { request: { select: { supplierId: true } } } } } } } });
   const byLink = Boolean(q && who.token && q.accessTokenHash === hashToken(who.token));
   const byAccount = Boolean(q && who.viewer && isTheirs(q, who.viewer));
   if (!q || (!byLink && !byAccount)) throw new DomainError("not-found", "No such quote.");
@@ -85,20 +87,28 @@ async function answerable(tx: Prisma.TransactionClient, number: string, who: Ans
   return q;
 }
 
-/** The customer accepts. Sales are told, and D6 turns it into an order. */
-export async function acceptQuote(db: PrismaClient, deps: QuoteDeps, number: string, who: Answerer, ip?: string | null) {
+/**
+ * The customer accepts, saying how it reaches them and how they pay. It
+ * becomes an order with its pro forma invoice, sales are told, and an
+ * order on account goes straight to purchasing.
+ */
+export async function acceptQuote(db: PrismaClient, deps: QuoteDeps, number: string, who: Answerer, details: QuoteOrderDetails, ip?: string | null) {
   const now = deps.now ?? new Date();
-  return db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "Quote" WHERE number = ${number} FOR UPDATE`;
     const q = await answerable(tx, number, who, now);
+    const { order, token } = await orderFromQuote(tx, deps, q, details, now);
     await tx.quote.update({ where: { id: q.id }, data: { status: "ACCEPTED", acceptedAt: now } });
     const total = q.totalMinor === null ? "" : formatMoney({ amountMinor: q.totalMinor, currency: q.currency }, q.market.locale);
-    await queueEmail(tx, deps.key, { to: q.email, kind: "quote.accepted", payload: { number: q.number, name: q.name, total } });
-    for (const to of await salesAddresses(tx)) await queueEmail(tx, deps.key, { to, kind: "quote.answered", payload: { number: q.number, customer: q.companyName || q.name, total, outcome: "accepted", quoteId: q.id, reason: "" } });
+    for (const to of await salesAddresses(tx)) await queueEmail(tx, deps.key, { to, kind: "quote.answered", payload: { number: q.number, customer: q.companyName || q.name, total, outcome: "accepted", quoteId: q.id, reason: "", order: order.number } });
     const label = who.viewer?.name ?? `${q.name}, by the emailed link`;
-    await audit(tx, { actorKind: who.viewer ? "CUSTOMER" : "SYSTEM", actorUserId: who.viewer?.userId ?? null, actorLabel: label, action: "quote.accepted", summary: `Accepted quote ${q.number} for ${total}`, organisationId: q.organisationId, subjectUserId: q.userId, targetType: "Quote", targetId: q.id, visibleToCustomer: Boolean(q.userId || q.organisationId), ipAddress: ip });
-    return q;
+    const actor = { actorKind: who.viewer ? ("CUSTOMER" as const) : ("SYSTEM" as const), actorUserId: who.viewer?.userId ?? null, actorLabel: label, organisationId: q.organisationId, subjectUserId: q.userId, visibleToCustomer: Boolean(q.userId || q.organisationId), ipAddress: ip };
+    await audit(tx, { ...actor, action: "quote.accepted", summary: `Accepted quote ${q.number} for ${total}`, targetType: "Quote", targetId: q.id });
+    await audit(tx, { ...actor, action: "order.placed", summary: `Order ${order.number} placed from quote ${q.number} for ${total}${order.paymentMethod === "ACCOUNT" ? ", on account" : ""}`, targetType: "Order", targetId: order.id });
+    return { quote: q, order, token };
   });
+  if (result.order.status === "ON_ACCOUNT") await startProcurement(db, deps, result.order.id);
+  return result;
 }
 
 export async function declineQuote(db: PrismaClient, deps: QuoteDeps, number: string, who: Answerer, reasonInput: string, ip?: string | null) {
