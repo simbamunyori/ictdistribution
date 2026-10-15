@@ -41,6 +41,8 @@ pack one && bash deploy/deploy.sh one "$home/incoming/one.tar.gz"
 live | grep -q '"release":"one"'
 markets=$(dc exec -T db psql -U ictd -d ictd -tAc 'SELECT count(*) FROM "Market"')
 [[ $markets -eq 3 ]] || { echo "expected the three launch markets, found $markets"; exit 1; }
+# Product images are resized with sharp, whose native library must be in the image.
+dc exec -T app node -e "require('sharp')({create:{width:8,height:8,channels:3,background:'#000'}}).webp().toBuffer().then((b)=>console.log('sharp resizes images', b.length))" | grep -q "sharp resizes images"
 
 step "2. Invite the first staff Admin"
 dc exec -T app node ops.cjs create-admin "Rehearsal Admin" admin@example.test | tee "$home/admin.log"

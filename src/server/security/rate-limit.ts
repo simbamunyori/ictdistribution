@@ -22,6 +22,12 @@ export const LIMITS = {
   signUpPerIp: { max: 10, windowMs: 60 * 60_000 },
   /** Invitations sent by one organisation. */
   invitePerOrg: { max: 30, windowMs: 60 * 60_000 },
+  /** Tries at checkout from one address, including ones with mistakes. */
+  checkoutPerIp: { max: 30, windowMs: 10 * 60_000 },
+  /** Orders actually placed from one address. */
+  ordersPerIp: { max: 10, windowMs: 60 * 60_000 },
+  /** Company documents a business uploads. */
+  documentsPerOrg: { max: 30, windowMs: 60 * 60_000 },
 } satisfies Record<string, Limit>;
 
 export class RateLimitedError extends Error {
@@ -45,4 +51,10 @@ export async function hit(r: Pick<Redis, "eval">, key: string, limit: Limit, now
 export async function enforce(r: Pick<Redis, "eval">, key: string, limit: Limit) {
   const result = await hit(r, key, limit);
   if (!result.allowed) throw new RateLimitedError(result.resetAt);
+}
+
+/** Throws RateLimitedError if the limit is already used up, without counting a hit. Pair with `hit` once the thing has happened. */
+export async function check(r: Pick<Redis, "get" | "pttl">, key: string, limit: Limit, now = Date.now()) {
+  const count = Number((await r.get(`rl:${key}`)) ?? 0);
+  if (count >= limit.max) throw new RateLimitedError(new Date(now + Math.max(await r.pttl(`rl:${key}`), 0)));
 }

@@ -17,19 +17,14 @@ import { updateCustomerType } from "@/server/pricing/customer-types";
 import { acceptRate, OpenErApiSource, refreshRates, setRate, updateRateRules } from "@/server/pricing/rates";
 import { redis } from "@/server/redis";
 import { enforce, LIMITS } from "@/server/security/rate-limit";
-import { assertStaffCan, type StaffActor } from "@/server/staff/access";
+import { assertStaffCan } from "@/server/staff/access";
 import { changeStaffRole, inviteStaff, revokeStaffInvitation, setStaffActive } from "@/server/staff/staff";
+import { staff } from "./staff-actor";
 
 /**
  * Every admin change goes through here. Each action checks the session
  * again, the service checks the role, and the service writes the audit row.
  */
-
-async function staff(): Promise<{ actor: StaffActor; ip: string | null }> {
-  const session = await requireStaff();
-  const ctx = await requestContext();
-  return { actor: { userId: session.userId, name: session.user.name, staffRole: session.user.staffRole }, ip: ctx.ipAddress ?? null };
-}
 
 const on = (form: FormData, key: string) => form.get(key) === "on";
 const pick = (form: FormData, keys: string[]) => Object.fromEntries(keys.map((k) => [k, field(form, k)]));
@@ -43,6 +38,7 @@ export async function organisationTypeAction(_: ActionState, form: FormData): Pr
     return "Changed. The customer can see this in their history.";
   });
   revalidatePath("/admin/customers");
+  revalidatePath(`/admin/customers/${field(form, "organisationId")}`);
   return result;
 }
 

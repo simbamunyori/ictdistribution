@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { InviteForm } from "@/components/account/forms";
 import { Alert } from "@/components/ui/alert";
@@ -31,7 +32,7 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
   return (
     <>
       <PageHeader title={org.name} lead={`${org.type.name} account. You are ${ORG_ROLE_LABEL[actor.role]}.`} />
-      {q.created ? <Alert tone="positive" className="mb-6">{org.name} is set up. Invite your colleagues below. Our team will check the business before trade prices show.</Alert> : null}
+      {q.created ? <Alert tone="positive" className="mb-6">{org.name} is set up. Invite your colleagues below, and send your <Link href="/account/business" className="font-semibold underline underline-offset-4">business details</Link> so we can check them before trade prices show.</Alert> : null}
       {q.joined ? <Alert tone="positive" className="mb-6">You&apos;ve joined {org.name}.</Alert> : null}
 
       <div className="grid gap-6">

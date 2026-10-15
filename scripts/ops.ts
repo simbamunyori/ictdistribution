@@ -19,6 +19,7 @@ import { DomainError } from "@/server/errors";
 import { findPlaceholders } from "@/server/placeholders";
 import { OpenErApiSource, refreshRates } from "@/server/pricing/rates";
 import { seedReferenceData } from "@/server/seed";
+import { refreshCosts } from "@/server/shop/costs";
 import { inviteStaff } from "@/server/staff/staff";
 
 const db = new PrismaClient();
@@ -37,6 +38,9 @@ async function main() {
   if (command === "prestart") {
     const added = await seedReferenceData(db);
     if (added.length) console.log(`Added: ${added.join("; ")}.`);
+    // Shop prices come from each product's landed cost; bring them up to date before serving.
+    const costs = await refreshCosts(db);
+    if (costs) console.log(`Updated the landed cost of ${costs} products.`);
     if ((await db.exchangeRate.count()) === 0 && e.RATE_SOURCE !== "off") {
       try {
         const r = await refreshRates(db, new OpenErApiSource());

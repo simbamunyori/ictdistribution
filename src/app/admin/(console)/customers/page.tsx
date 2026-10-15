@@ -1,5 +1,6 @@
 import type { CustomerTypeCode } from "@prisma/client";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { organisationTypeAction } from "@/app/admin/(console)/actions";
 import { ActionForm } from "@/components/ui/action-form";
@@ -7,6 +8,7 @@ import { Badge, Card, PageHeader, TableWrap, td, th } from "@/components/ui/card
 import { inputClass } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { listCustomers } from "@/server/accounts/organisations";
+import { VERIFICATION_LABEL } from "@/server/accounts/verification";
 import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
 import { listCustomerTypes, ORGANISATION_TYPES } from "@/server/pricing/customer-types";
@@ -14,6 +16,7 @@ import { staffCan } from "@/server/staff/access";
 
 export const metadata: Metadata = { title: "Customers" };
 
+const CHECK_TONE = { NOT_SUBMITTED: "neutral", PENDING: "warning", APPROVED: "positive", REJECTED: "negative" } as const;
 const date = (d: Date) => d.toISOString().slice(0, 10);
 
 export default async function Customers({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -23,7 +26,8 @@ export default async function Customers({ searchParams }: { searchParams: Promis
   if (!staffCan(actor, "viewCustomers")) redirect("/admin");
   const types = await listCustomerTypes(prisma);
   const type = types.some((t) => t.code === q.type) ? (q.type as CustomerTypeCode) : undefined;
-  const { organisations, individuals } = await listCustomers(prisma, actor, { type, q: q.q });
+  const waiting = q.check === "waiting";
+  const { organisations, individuals } = await listCustomers(prisma, actor, { type, q: q.q, waiting });
   const canChange = staffCan(actor, "manageCustomers");
   const typeName = new Map(types.map((t) => [t.code, t.name]));
   const orgTypes = types.filter((t) => ORGANISATION_TYPES.includes(t.code)).map((t) => ({ value: t.code, label: t.name }));
@@ -47,23 +51,28 @@ export default async function Customers({ searchParams }: { searchParams: Promis
             ))}
           </select>
         </label>
+        <label className="flex items-center gap-2 sm:h-11">
+          <input type="checkbox" name="check" value="waiting" defaultChecked={waiting} className="size-4 accent-[var(--t-primary)]" />
+          <span className="text-callout font-semibold">Waiting to be checked</span>
+        </label>
         <button type="submit" className="h-11 rounded-md border border-line bg-raised px-4 font-semibold hover:bg-surface">
           Show
         </button>
       </form>
 
-      {type !== "INDIVIDUAL" ? (
+      {type !== "INDIVIDUAL" || waiting ? (
         <Card className="mb-6">
           <h2 className="text-headline font-bold">Organisations</h2>
           {organisations.length ? (
             <TableWrap label="Organisations">
-              <table className="mt-3 w-full min-w-[40rem] text-callout">
+              <table className="mt-3 w-full min-w-[46rem] text-callout">
                 <thead>
                   <tr>
                     <th className={th}>Name</th>
                     <th className={th}>Country</th>
                     <th className={th}>People</th>
                     <th className={th}>Joined</th>
+                    <th className={th}>Check</th>
                     <th className={th}>Type</th>
                   </tr>
                 </thead>
@@ -71,12 +80,17 @@ export default async function Customers({ searchParams }: { searchParams: Promis
                   {organisations.map((o) => (
                     <tr key={o.id}>
                       <td className={cn(td, "font-semibold text-ink")}>
-                        {o.name}
+                        <Link href={`/admin/customers/${o.id}`} className="text-link underline underline-offset-4">
+                          {o.name}
+                        </Link>
                         {o.registrationNumber ? <span className="block text-caption font-normal text-ink-muted">Reg. {o.registrationNumber}</span> : null}
                       </td>
                       <td className={td}>{o.country}</td>
                       <td className={cn(td, "tabular-nums")}>{o._count.memberships}</td>
                       <td className={cn(td, "tabular-nums")}>{date(o.createdAt)}</td>
+                      <td className={td}>
+                        <Badge tone={CHECK_TONE[o.verification]}>{VERIFICATION_LABEL[o.verification]}</Badge>
+                      </td>
                       <td className={td}>
                         {canChange ? (
                           <ActionForm action={organisationTypeAction} hidden={{ organisationId: o.id }} label="Change">
@@ -106,7 +120,7 @@ export default async function Customers({ searchParams }: { searchParams: Promis
         </Card>
       ) : null}
 
-      {!type || type === "INDIVIDUAL" ? (
+      {(!type || type === "INDIVIDUAL") && !waiting ? (
         <Card>
           <h2 className="text-headline font-bold">Individuals</h2>
           {individuals.length ? (

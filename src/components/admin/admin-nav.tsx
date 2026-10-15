@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
 export interface AdminNavItem {
   href: string;
   label: string;
-  /** A count to draw attention to, e.g. rates waiting to be accepted. */
+  /** A count to draw attention to, e.g. rates waiting to be accepted. Its hidden label stays inside the link (relative), so it never widens the page. */
   badge?: number;
 }
 
@@ -24,7 +24,7 @@ export function AdminNav({ items }: { items: AdminNavItem[] }) {
               href={i.href}
               aria-current={current(i.href) ? "page" : undefined}
               className={cn(
-                "flex items-center justify-between gap-2 rounded-md px-3 py-2 font-semibold whitespace-nowrap text-ink-muted hover:bg-surface hover:text-ink",
+                "relative flex items-center justify-between gap-2 rounded-md px-3 py-2 font-semibold whitespace-nowrap text-ink-muted hover:bg-surface hover:text-ink",
                 current(i.href) && "bg-surface text-ink",
               )}
             >

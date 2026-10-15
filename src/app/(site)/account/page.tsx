@@ -33,7 +33,7 @@ export default async function Account({ searchParams }: { searchParams: Promise<
       <PageHeader title={q.welcome ? `Welcome, ${session.user.name.split(" ")[0]}` : "Your account"} lead={session.user.email} />
       {q.welcome ? (
         <Alert tone="positive" className="mb-6">
-          Your account is ready. The shop opens soon, and you&apos;ll see your prices here first.
+          Your account is ready.
         </Alert>
       ) : null}
 

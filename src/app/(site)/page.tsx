@@ -1,10 +1,16 @@
 import { Building2, Laptop, Network, Server, ShieldCheck, Smartphone, Truck, User } from "lucide-react";
 import Link from "next/link";
-import { company } from "@/config/app";
+import { BundleSpecials, CategorySpecials, ProductSpecials } from "@/components/shop/specials-view";
+import { ProductCard } from "@/components/shop/product-card";
 import { SiteFrame } from "@/components/site/site-frame";
 import { buttonClass } from "@/components/ui/button";
 import { currencyName } from "@/lib/money";
-import { currentMarket } from "@/server/markets/current";
+import { compareIds } from "@/server/catalogue/compare";
+import { cardsFor } from "@/server/catalogue/shop";
+import { prisma } from "@/server/db";
+import { featuredIds, shopSettings } from "@/server/shop/settings";
+import { specialsFor } from "@/server/shop/showcase";
+import { shopPrices, shopWhere } from "@/server/shop/viewer";
 
 const RANGE = [
   { icon: Laptop, title: "Laptops and desktops", text: "Everyday notebooks to workstations, with monitors, SSDs and memory." },
@@ -14,26 +20,35 @@ const RANGE = [
 ];
 
 export default async function Home() {
-  const { market } = await currentMarket();
+  const prices = await shopPrices();
+  const market = prices.market;
+  const [settings, specials, featured, compare] = await Promise.all([shopSettings(prisma), specialsFor(prisma, prices, { featured: true }), featuredIds(prisma).then((ids) => cardsFor(prisma, ids, prices)), compareIds()]);
+  const where = await shopWhere();
   return (
     <SiteFrame>
       <section className="border-b border-line bg-surface">
         <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 md:grid-cols-[1.3fr_1fr] md:items-center md:px-6 md:py-20">
           <div>
-            <p className="kicker text-link">Southern Africa</p>
-            <h1 className="mt-3 text-display font-extrabold">{company.tagline}</h1>
+            <p className="kicker text-link">{market.name}</p>
+            <h1 className="mt-3 text-display font-extrabold">{settings.heroTitle}</h1>
             <p className="mt-5 max-w-xl text-headline text-ink-body">
-              Laptops, phones, networking, servers and software for homes and businesses in {market.name}, priced in {currencyName(market.currency, market.locale).toLowerCase()}.
+              {settings.heroText} Prices in {currencyName(market.currency, market.locale).toLowerCase()}, including {market.taxName}.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/sign-up" className={buttonClass("primary", "lg")}>
-                Create an account
+              <Link href="/products" className={buttonClass("primary", "lg")}>
+                Shop the range
               </Link>
-              <Link href="/sign-up?for=business" className={buttonClass("secondary", "lg")}>
-                Register your business
+              <Link href="/specials" className={buttonClass("secondary", "lg")}>
+                See the specials
               </Link>
             </div>
-            <p className="mt-4 text-callout text-ink-muted">The shop opens soon. Create an account now and we&apos;ll let you know.</p>
+            <p className="mt-4 text-callout text-ink-muted">
+              Buying for a business?{" "}
+              <Link href="/sign-up?for=business" className="font-semibold text-link underline underline-offset-4">
+                Register for trade prices
+              </Link>
+              .
+            </p>
           </div>
           <ul className="grid gap-3">
             {[
@@ -51,6 +66,44 @@ export default async function Home() {
           </ul>
         </div>
       </section>
+
+      {specials.any ? (
+        <section className="mx-auto max-w-6xl px-4 pt-14 md:px-6" aria-labelledby="specials">
+          <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="specials" className="text-title font-bold">
+              Specials
+            </h2>
+            <Link href="/specials" className="font-semibold text-link underline underline-offset-4">
+              All specials
+            </Link>
+          </div>
+          <div className="flex flex-col gap-6">
+            <ProductSpecials items={specials.products} compare={compare} back="/" where={where} />
+            <BundleSpecials items={specials.bundles} where={where} />
+            <CategorySpecials items={specials.categories} where={where} />
+          </div>
+        </section>
+      ) : null}
+
+      {featured.length ? (
+        <section className="mx-auto max-w-6xl px-4 pt-14 md:px-6" aria-labelledby="featured">
+          <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="featured" className="text-title font-bold">
+              Popular now
+            </h2>
+            <Link href="/products" className="font-semibold text-link underline underline-offset-4">
+              All products
+            </Link>
+          </div>
+          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {featured.map((p) => (
+              <li key={p.id} className="flex">
+                <ProductCard product={p} comparing={compare.includes(p.id)} back="/" where={where} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="mx-auto max-w-6xl px-4 py-14 md:px-6" aria-labelledby="range">
         <h2 id="range" className="text-title font-bold">
@@ -71,9 +124,9 @@ export default async function Home() {
         <div className="rounded-lg border border-line bg-raised p-6">
           <User aria-hidden className="size-6 text-link" />
           <h2 className="mt-3 text-title font-bold">Buying for yourself</h2>
-          <p className="mt-2 text-ink-body">Retail prices on laptops, phones, monitors, storage and memory, and regular specials. Check out with an account or as a guest.</p>
-          <Link href="/sign-up" className={buttonClass("ghost", "md", "mt-4 -ml-4")}>
-            Create an account
+          <p className="mt-2 text-ink-body">Clear prices on laptops, phones, monitors, storage and memory, and regular specials. Check out with an account or as a guest, and pay by bank transfer.</p>
+          <Link href="/products" className={buttonClass("ghost", "md", "mt-4 -ml-4")}>
+            Start shopping
           </Link>
         </div>
         <div className="rounded-lg bg-forest p-6 text-ink-on-dark">

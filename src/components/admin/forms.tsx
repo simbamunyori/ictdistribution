@@ -17,7 +17,7 @@ import type { ActionState } from "@/server/action-state";
 
 type Option = { value: string; label: string };
 
-function Outcome({ state }: { state: ActionState }) {
+export function Outcome({ state }: { state: ActionState }) {
   if (state.error) return <Alert>{state.error}</Alert>;
   if (state.message) return <Alert tone="positive">{state.message}</Alert>;
   return null;
