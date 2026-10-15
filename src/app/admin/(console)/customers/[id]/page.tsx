@@ -3,11 +3,14 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { organisationTypeAction } from "@/app/admin/(console)/actions";
 import { removeCustomerPriceAction } from "@/app/admin/(console)/business-actions";
+import { setAccountCodeAction } from "@/app/admin/(console)/finance-actions";
+import { SpecForm } from "@/components/admin/spec-form";
 import { ApproveForm, CreditDecisionForm, CreditTermsForm, CustomerPriceForm, RejectForm } from "@/components/admin/business-forms";
 import { ActionForm } from "@/components/ui/action-form";
 import { Alert } from "@/components/ui/alert";
 import { Badge, Card, PageHeader, TableWrap, td, th } from "@/components/ui/card";
 import { inputClass } from "@/components/ui/field";
+import { accountCodeFrom } from "@/lib/accounting-export";
 import { cn } from "@/lib/cn";
 import { formatMoney, toPlainAmount } from "@/lib/money";
 import { formatDate, formatDateTime } from "@/lib/zoned";
@@ -16,6 +19,7 @@ import { listMembers } from "@/server/accounts/organisations";
 import { DOCUMENT_KIND_LABEL, VERIFICATION_LABEL } from "@/server/accounts/verification";
 import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
+import { openInvoices } from "@/server/finance/reminders";
 import { customerPricesFor } from "@/server/pricing/customer-prices";
 import { listCustomerTypes, ORGANISATION_TYPES } from "@/server/pricing/customer-types";
 import { ORG_ROLE_LABEL } from "@/server/org/access";
@@ -42,13 +46,14 @@ export default async function Customer({ params }: { params: Promise<{ id: strin
     },
   });
   if (!org) notFound();
-  const [types, { members }, position, prices, orders, history] = await Promise.all([
+  const [types, { members }, position, prices, orders, history, owing] = await Promise.all([
     listCustomerTypes(prisma),
     listMembers(prisma, org.id),
     creditPosition(prisma, org.id),
     customerPricesFor(prisma, org.id),
     prisma.order.findMany({ where: { organisationId: org.id }, orderBy: { createdAt: "desc" }, take: 10, include: { market: { select: { locale: true } } } }),
     prisma.auditEvent.findMany({ where: { organisationId: org.id }, orderBy: { createdAt: "desc" }, take: 30 }),
+    openInvoices(prisma, new Date(), { organisationId: org.id }),
   ]);
   const { locale, timeZone, currency } = org.market;
   const money = (amountMinor: bigint) => formatMoney({ amountMinor, currency }, locale);
@@ -58,6 +63,7 @@ export default async function Customer({ params }: { params: Promise<{ id: strin
     type: staffCan(actor, "manageCustomers"),
     prices: staffCan(actor, "manageCustomerPrices"),
     credit: staffCan(actor, "manageCredit"),
+    finance: staffCan(actor, "manageFinance"),
   };
   const orgTypes = types.filter((t) => ORGANISATION_TYPES.includes(t.code)).map((t) => ({ value: t.code, label: t.name }));
 
@@ -261,6 +267,40 @@ export default async function Customer({ params }: { params: Promise<{ id: strin
               <h3 className="mb-3 font-bold">Set terms directly</h3>
               <CreditTermsForm organisationId={org.id} currency={currency} maxDays={MAX_TERMS_DAYS} values={{ limit: org.creditLimitMinor === null ? "" : toPlainAmount({ amountMinor: org.creditLimitMinor, currency }), termsDays: org.creditTermsDays ? String(org.creditTermsDays) : "30", onHold: org.creditOnHold }} />
             </div>
+          ) : null}
+        </Card>
+
+        <Card>
+          <h2 className="text-headline font-bold">Accounts</h2>
+          {owing.length ? (
+            <ul className="mt-2 divide-y divide-line text-callout">
+              {owing.map((i) => (
+                <li key={i.id} className="flex flex-wrap justify-between gap-3 py-2">
+                  <a href={`/admin/orders/${i.orderId}/invoice`} className="font-semibold text-link underline underline-offset-4">
+                    {i.number}
+                  </a>
+                  <span>
+                    {formatMoney({ amountMinor: i.outstandingMinor, currency: i.currency }, locale)} to pay, due {formatDate(i.dueAt, locale, timeZone)}
+                    {i.daysOverdue > 0 ? `, ${i.daysOverdue} ${i.daysOverdue === 1 ? "day" : "days"} late` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2">Nothing owed.</p>
+          )}
+          <p className="mt-3 text-callout">
+            <a href={`/admin/customers/${org.id}/statement`} className="font-semibold text-link underline underline-offset-4">
+              Download their statement
+            </a>{" "}
+            for the last three months, as they see it.
+          </p>
+          {can.finance ? (
+            <div className="mt-4 max-w-md">
+              <SpecForm action={setAccountCodeAction} hidden={{ organisationId: org.id }} columns={1} fields={[{ kind: "text", id: "accountCode", label: "Account code in the accounting package", defaultValue: org.accountCode, hint: `Empty uses ${accountCodeFrom(org.name)}, made from their name.` }]} submitLabel="Save code" variant="secondary" />
+            </div>
+          ) : org.accountCode ? (
+            <p className="mt-3 text-callout">Account code {org.accountCode}.</p>
           ) : null}
         </Card>
 

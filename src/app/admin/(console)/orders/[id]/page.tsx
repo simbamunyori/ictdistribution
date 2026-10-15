@@ -45,7 +45,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       organisation: { select: { id: true, name: true } },
       quote: { select: { id: true, number: true } },
       purchaseOrders: { orderBy: { createdAt: "asc" }, include: { supplier: { select: { name: true } } } },
-      invoice: { select: { number: true } },
+      invoice: { select: { number: true, dueAt: true, reminders: { orderBy: { sentAt: "asc" }, select: { sequence: true, sentAt: true, sentByLabel: true, outstandingMinor: true } } } },
       returns: { orderBy: { createdAt: "desc" }, select: { id: true, number: true, status: true, reason: true, createdAt: true } },
       units: { orderBy: { serial: "asc" }, select: { id: true, serial: true, orderLineId: true, source: true, status: true, startsAt: true, endsAt: true, warrantyMonths: true } },
       creditNotes: { orderBy: { issuedAt: "asc" }, include: { request: { select: { id: true, number: true } } } },
@@ -316,6 +316,19 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
                 <SpecForm action={recordRefundAction} hidden={{ orderId: order.id }} idPrefix="refund-" columns={3} fields={[{ kind: "text", id: "amount", label: `Paid back (${order.currency})`, inputMode: "decimal", defaultValue: toPlainAmount({ amountMinor: m.overpaid, currency: order.currency }) }, { kind: "text", id: "paidOn", label: "Paid on", type: "date", defaultValue: today }, { kind: "text", id: "reference", label: "Reference" }]} submitLabel="Record refund" pendingLabel="Saving" />
               </div>
             ) : null}
+          </Card>
+        ) : null}
+
+        {order.invoice?.reminders.length ? (
+          <Card>
+            <h2 className="text-headline font-bold">Reminders sent</h2>
+            <ul className="mt-3 flex flex-col gap-1 text-callout">
+              {order.invoice.reminders.map((r) => (
+                <li key={r.sequence}>
+                  Reminder {r.sequence}, {formatDate(r.sentAt, locale, timeZone)}, for {money(r.outstandingMinor)}, by {r.sentByLabel}
+                </li>
+              ))}
+            </ul>
           </Card>
         ) : null}
 

@@ -49,7 +49,7 @@ let reseller: Org;
 const deps = { key: KEY, reader: new RulesReader(), replyTo: "quotes@example.co.bw" };
 
 async function product(cost: string) {
-  const mpn = `QT${tag()}`;
+  const mpn = `QT1${tag()}`;
   const p = await createProduct(db, admin, { name: `Access point ${mpn}`, brand: "Ubiquiti", mpn, categoryId, summary: "", description: "", warrantyMonths: "24", warrantyTerms: "Manufacturer", sellToIndividuals: false, status: "ACTIVE", sourcingRule: null });
   await saveOffer(db, admin, { supplierId: mailSupplier.id, productId: p.id, cost, supplierSku: "", leadTimeDays: "6", moq: "", stock: "", active: true });
   return p;

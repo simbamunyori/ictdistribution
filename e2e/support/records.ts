@@ -12,8 +12,8 @@ import { PrismaClient } from "@prisma/client";
  * one waiting for approval), travelling in a live shipment with one
  * delivery out and one being packed, and for the customer portal an
  * order of the demo business sent on account and part paid, with its
- * invoice, delivery, a return waiting and a saved list, made here when
- * missing.
+ * invoice, delivery, a return waiting and a saved list, and a conversation
+ * with the site assistant passed to Sales, made here when missing.
  * Development and CI databases only.
  */
 let cached: Promise<Record<string, string>> | null = null;
@@ -255,7 +255,9 @@ async function load(): Promise<Record<string, string>> {
     const invoice = await db.invoice.findUniqueOrThrow({ where: { number: "INV-TEST1" } });
     await once(() => db.creditNote.findUnique({ where: { number: "CN-TEST1" } }), () => db.creditNote.create({ data: { number: "CN-TEST1", orderId: portal.id, invoiceId: invoice.id, userId: owner.userId, organisationId: business.id, currency: "BWP", totalMinor: 100_00n, taxMinor: 12_28n, lines: [{ description: "Delivery charge refunded (demo)", mpn: "", quantity: 1, unitMinor: "10000", totalMinor: "10000" }], reason: "Goodwill credit for a late delivery (demo).", issuedAt: new Date(Date.now() - 3 * 86_400_000), issuedByLabel: "Browser checks", accessTokenHash: hash("browser-checks-credit-note") } }));
     const portalList = await once(() => db.savedList.findFirst({ where: { organisationId: business.id, name: "Office kit (demo)" } }), () => db.savedList.create({ data: { name: "Office kit (demo)", userId: owner.userId, organisationId: business.id, lines: { create: [{ productId: product.id, quantity: 3 }] } } }));
-    return { liveShipment: liveShipment.id, pastShipment: pastShipment.id, procuredOrderNumber: procured.number, procuredOrderToken: "browser-checks-paid-order", procuredOrder: procured.id, sentPo: sentPo.id, waitingPo: waitingPo.id, poToken, quote: review.id, quoteNumber: sent.number, quoteToken, rfqToken, business: business.id, product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken, portalOrder: portal.id, portalOrderNumber: portal.number, portalReturn: portalReturn.id, portalReturnNumber: portalReturn.number, portalList: portalList.id, aftersalesReturn: aftersalesReturn.id };
+    // A conversation with the site assistant that a visitor passed to Sales.
+    const chat = await once(() => db.assistantChat.findUnique({ where: { tokenHash: hash("browser-checks-assistant") } }), () => db.assistantChat.create({ data: { tokenHash: hash("browser-checks-assistant"), marketCode: "bw", standing: "trade", status: "HANDED_OVER", messages: [{ role: "user", text: "Laptops for a 20 person office under P12,000 each", at: new Date().toISOString() }, { role: "assistant", text: "Here is what matches within BWP 12,000.", products: [product.slug], at: new Date().toISOString() }], userMessages: 1, quoteDraft: [{ description: `${product.name} (${product.mpn})`, quantity: 20 }], handoverName: "Neo Kgosi", handoverEmail: "neo@example.co.bw", handoverPhone: "+267 71 000 000", handoverNote: "Need them by month end.", handedOverAt: new Date() } }));
+    return { liveShipment: liveShipment.id, pastShipment: pastShipment.id, procuredOrderNumber: procured.number, procuredOrderToken: "browser-checks-paid-order", procuredOrder: procured.id, sentPo: sentPo.id, waitingPo: waitingPo.id, poToken, quote: review.id, quoteNumber: sent.number, quoteToken, rfqToken, business: business.id, product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken, portalOrder: portal.id, portalOrderNumber: portal.number, portalReturn: portalReturn.id, portalReturnNumber: portalReturn.number, portalList: portalList.id, aftersalesReturn: aftersalesReturn.id, assistantChat: chat.id };
   } finally {
     await db.$disconnect();
   }

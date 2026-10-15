@@ -102,6 +102,17 @@ const JOBS: Job[] = [
     },
   },
   {
+    // Overdue invoices, chased on the schedule in /admin/finance/settings. Once a day, in working hours.
+    name: "invoice-reminders",
+    cron: "0 8 * * *",
+    run: async () => {
+      const { sendReminders } = await import("@/server/finance/reminders");
+      const sent = await sendReminders(prisma, { key: appKey() });
+      if (sent) await deliverEmail();
+      return sent;
+    },
+  },
+  {
     // Spent sign-in codes and ended sessions, a week on. Carts untouched for 60 days.
     name: "sign-in-cleanup",
     cron: "40 3 * * *",
