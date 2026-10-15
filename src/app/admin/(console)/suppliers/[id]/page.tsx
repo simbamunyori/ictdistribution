@@ -92,6 +92,7 @@ export default async function SupplierPage({ params, searchParams }: { params: P
             leadTimeDays: String(supplier.leadTimeDays),
             minOrder: supplier.minOrderMinor === null ? "" : toPlainAmount({ amountMinor: supplier.minOrderMinor, currency: supplier.currency }),
             landedCostPercent: String(supplier.landedCostBps / 100),
+            freightMode: supplier.freightMode,
             preferred: supplier.preferred,
             active: supplier.active,
           }}

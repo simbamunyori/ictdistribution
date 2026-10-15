@@ -69,6 +69,10 @@ export async function seedReferenceData(db: PrismaClient): Promise<string[]> {
     await db.procurementSettings.create({ data: { id: "global" } });
     added.push("purchase order rules");
   }
+  if (!(await db.logisticsSettings.findUnique({ where: { id: "global" } }))) {
+    await db.logisticsSettings.create({ data: { id: "global" } });
+    added.push("logistics rules");
+  }
   added.push(...(await seedStarterCategories(db)));
   return added;
 }
@@ -118,6 +122,7 @@ export async function seedDemo(db: PrismaClient): Promise<string[]> {
   added.push(...(await seedDemoCatalogue(db)));
   added.push(...(await seedDemoShop(db)));
   added.push(...(await seedDemoSupplierCategories(db)));
+  added.push(...(await seedDemoLogistics(db)));
   return added;
 }
 
@@ -151,6 +156,54 @@ async function seedDemoShop(db: PrismaClient): Promise<string[]> {
   if (monitor) await db.special.create({ data: { ...all, slug: "demo-monitor-week", name: `Monitor week ${DEMO_SUFFIX}`, description: "5% off every monitor.", kind: "CATEGORY", categoryId: monitor.categoryId, discountBps: 500, endsAt: new Date(now + 5 * day), featured: true } });
   if (laptop && memory) await db.special.create({ data: { ...all, slug: "demo-laptop-memory-bundle", name: `ThinkPad with 16 GB more memory ${DEMO_SUFFIX}`, description: "The laptop and a second 16 GB stick, together.", kind: "BUNDLE", discountBps: 800, endsAt: new Date(now + 20 * day), quantityLimit: 5, featured: true, items: { create: [{ productId: laptop.id }, { productId: memory.id }] } } });
   return ["demo shop for Botswana: bank details, delivery, a collection point, featured products and three specials"];
+}
+
+/** Boxed weight (g) and size (mm) of the demo products, for freight estimates. */
+const DEMO_BOXES: Record<string, [grams: number, l: number, w: number, h: number]> = {
+  "DEMO-21M7001": [2300, 420, 290, 75],
+  "DEMO-85B12EA": [2700, 450, 310, 80],
+  "DEMO-SM-A556E": [450, 190, 100, 60],
+  "DEMO-P2425H": [6900, 660, 450, 170],
+  "DEMO-KVR56S46BS8-16": [60, 150, 90, 15],
+  "DEMO-KVR32S22S8-16": [60, 150, 90, 15],
+  "DEMO-SG2428P": [4800, 520, 330, 110],
+};
+
+/**
+ * A demo warehouse, the first shipment samples and duty rules, all marked
+ * (demo) so the start-up check flags them on a real server. The samples
+ * stand in for our own shipment records until the business loads them.
+ */
+async function seedDemoLogistics(db: PrismaClient): Promise<string[]> {
+  if (await db.warehouse.count({ where: { name: { endsWith: DEMO_SUFFIX } } })) return [];
+  const w = await db.warehouse.create({ data: { code: "GBE", name: `Gaborone West warehouse ${DEMO_SUFFIX}`, country: "BW", address: "Plot 1, Gaborone West Industrial, Gaborone\nReceiving: Thabo Demo, +267 71 000 000" } });
+  await db.logisticsSettings.update({ where: { id: "global" }, data: { defaultWarehouseId: w.id } });
+  for (const [mpn, [weightGrams, lengthMm, widthMm, heightMm]] of Object.entries(DEMO_BOXES)) await db.product.updateMany({ where: { mpn, weightGrams: null }, data: { weightGrams, lengthMm, widthMm, heightMm } });
+  await db.supplier.updateMany({ where: { name: { endsWith: DEMO_SUFFIX }, country: "CN" }, data: { freightMode: "AIR" } });
+  const day = 86_400_000;
+  const now = Date.now();
+  // Road from South Africa, in rand; air from China, in dollars. Weight in kg, volume in cubic metres.
+  const samples: [mode: "ROAD" | "AIR", origin: string, currency: string, kg: number, m3: number, goods: number, freight: number, insurance: number, clearing: number, days: number][] = [
+    ["ROAD", "ZA", "ZAR", 120, 0.9, 85000, 4200, 0, 1850, 4],
+    ["ROAD", "ZA", "ZAR", 340, 1.6, 210000, 7400, 0, 2100, 5],
+    ["ROAD", "ZA", "ZAR", 80, 0.5, 64000, 2900, 0, 1650, 3],
+    ["ROAD", "ZA", "ZAR", 560, 2.8, 390000, 12100, 0, 2600, 5],
+    ["ROAD", "ZA", "ZAR", 210, 1.1, 150000, 5100, 0, 1900, 4],
+    ["AIR", "CN", "USD", 45, 0.2, 9800, 460, 49, 95, 9],
+    ["AIR", "CN", "USD", 120, 0.6, 26500, 1180, 132, 140, 11],
+    ["AIR", "CN", "USD", 75, 0.45, 15900, 820, 80, 110, 8],
+    ["AIR", "CN", "USD", 30, 0.12, 7100, 330, 36, 90, 10],
+  ];
+  let i = 0;
+  for (const [mode, originCountry, currency, kg, m3, goods, freight, insurance, clearing, days] of samples) {
+    const [{ n }] = await db.$queryRaw<{ n: bigint }[]>`SELECT nextval('shipment_number_seq') AS n`;
+    const arrivedOn = new Date(now - (20 + i++ * 9) * day);
+    await db.shipment.create({ data: { number: `SH-${n}`, source: "HISTORY", status: "ARRIVED", mode, originCountry, destinationCountry: "BW", carrier: `Demo Freight ${DEMO_SUFFIX}`, weightGrams: kg * 1000, volumeCm3: Math.round(m3 * 1_000_000), currency, goodsValueMinor: BigInt(goods) * 100n, freightMinor: BigInt(freight) * 100n, insuranceMinor: BigInt(insurance) * 100n, clearingMinor: BigInt(clearing) * 100n, shippedOn: new Date(arrivedOn.getTime() - days * day), arrivedOn, transitDays: days, notes: `Sample shipment ${DEMO_SUFFIX}`, createdByLabel: "Seed" } });
+  }
+  // Customs union members trade duty free; others pay duty and a levy. Figures are illustrative only.
+  await db.dutyRule.create({ data: { categoryId: null, destinationCountry: "BW", dutyBps: 500, leviesBps: 100, exemptOrigins: ["ZA", "NA", "LS", "SZ"], note: `Illustrative ${DEMO_SUFFIX}` } });
+  await refreshCosts(db);
+  return [`demo warehouse ${w.code}, ${samples.length} sample shipments, a demo duty rule and box sizes for the demo products`];
 }
 
 /** What the demo suppliers supply, so quotes for items we don't list can ask them for prices. */

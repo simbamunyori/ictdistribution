@@ -28,7 +28,7 @@ export default async function NewSupplier() {
           readOnly={false}
           countries={countryOptions()}
           currencies={currencies}
-          supplier={{ name: "", kind: "LOCAL", country: "", currency: "USD", email: "", whatsapp: "", phone: "", website: "", portalUrl: "", notes: "", leadTimeDays: "5", minOrder: "", landedCostPercent: "0", preferred: false, active: true }}
+          supplier={{ name: "", kind: "LOCAL", country: "", currency: "USD", email: "", whatsapp: "", phone: "", website: "", portalUrl: "", notes: "", leadTimeDays: "5", minOrder: "", landedCostPercent: "0", freightMode: "ROAD", preferred: false, active: true }}
         />
       </Card>
     </>

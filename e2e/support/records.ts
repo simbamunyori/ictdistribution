@@ -9,7 +9,8 @@ import { PrismaClient } from "@prisma/client";
  * application and a volume break at its level, two demo quotes (one
  * waiting for a check with a supplier request, one sent to the business),
  * and a paid order with two purchase orders (one sent with a known link,
- * one waiting for approval), made here when missing.
+ * one waiting for approval), travelling in a live shipment with one
+ * delivery out and one being packed, made here when missing.
  * Development and CI databases only.
  */
 let cached: Promise<Record<string, string>> | null = null;
@@ -184,7 +185,16 @@ async function load(): Promise<Record<string, string>> {
     const poLine = { orderLineId: procuredLine.id, position: 1, description: product.name, mpn: product.mpn, quantity: 2, unitCostMinor: 60_00n, lineTotalMinor: 120_00n };
     const sentPo = await once(() => db.purchaseOrder.findUnique({ where: { number: "PO-TEST1" } }), () => db.purchaseOrder.create({ data: { number: "PO-TEST1", orderId: procured.id, supplierId: supplier.id, status: "SENT", channel: "EMAIL", currency: supplier.currency, totalMinor: 120_00n, totalBaseMinor: 120_00n, tokenHash: hash(poToken), tokenSealed: "browser-checks", sentAt: new Date(), lines: { create: [poLine] } } }));
     const waitingPo = await once(() => db.purchaseOrder.findUnique({ where: { number: "PO-TEST2" } }), () => db.purchaseOrder.create({ data: { number: "PO-TEST2", orderId: procured.id, supplierId: supplier.id, status: "AWAITING_APPROVAL", channel: "EMAIL", currency: supplier.currency, totalMinor: 120_00n, totalBaseMinor: 120_00n, reviewReasons: "Sending by itself is switched off.", tokenHash: hash("browser-checks-po-2"), tokenSealed: "browser-checks", lines: { create: [poLine] } } }));
-    return { procuredOrder: procured.id, sentPo: sentPo.id, waitingPo: waitingPo.id, poToken, quote: review.id, quoteNumber: sent.number, quoteToken, rfqToken, business: business.id, product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken };
+    // Logistics: the paid order's line ordered and shipped, travelling in a live shipment, with one delivery out and one being packed.
+    if (!(await db.trackingEvent.findFirst({ where: { orderLineId: procuredLine.id } }))) {
+      await db.trackingEvent.createMany({ data: [{ orderLineId: procuredLine.id, status: "ORDERED", byLabel: "Browser checks", at: new Date(Date.now() - 3 * 86_400_000) }, { orderLineId: procuredLine.id, status: "SHIPPED", byLabel: "Browser checks", note: "Waybill DEMO1" }] });
+      await db.orderLine.update({ where: { id: procuredLine.id }, data: { tracking: "SHIPPED" } });
+    }
+    const liveShipment = await once(() => db.shipment.findUnique({ where: { number: "SH-TEST1" } }), () => db.shipment.create({ data: { number: "SH-TEST1", source: "LIVE", status: "IN_TRANSIT", mode: "AIR", originCountry: "CN", destinationCountry: "BW", carrier: "Demo Air (demo)", reference: "AWB 000-00000000", weightGrams: 45_000, volumeCm3: 200_000, currency: "USD", freightMinor: 460_00n, shippedOn: new Date(), notes: "Browser checks (demo)", createdByLabel: "Browser checks", purchaseOrders: { connect: [{ id: sentPo.id }] } } }));
+    const pastShipment = await db.shipment.findFirstOrThrow({ where: { source: "HISTORY" }, orderBy: { createdAt: "asc" } });
+    await once(() => db.delivery.findUnique({ where: { number: "DN-TEST1" } }), () => db.delivery.create({ data: { number: "DN-TEST1", orderId: procured.id, status: "DISPATCHED", carrier: "Demo Couriers", reference: "DC123", dispatchedAt: new Date(), createdByLabel: "Browser checks", lines: { create: [{ orderLineId: procuredLine.id, quantity: 1 }] } } }));
+    await once(() => db.delivery.findUnique({ where: { number: "DN-TEST2" } }), () => db.delivery.create({ data: { number: "DN-TEST2", orderId: procured.id, status: "PREPARED", createdByLabel: "Browser checks", lines: { create: [{ orderLineId: procuredLine.id, quantity: 1 }] } } }));
+    return { liveShipment: liveShipment.id, pastShipment: pastShipment.id, procuredOrderNumber: procured.number, procuredOrderToken: "browser-checks-paid-order", procuredOrder: procured.id, sentPo: sentPo.id, waitingPo: waitingPo.id, poToken, quote: review.id, quoteNumber: sent.number, quoteToken, rfqToken, business: business.id, product: product.id, productSlug: product.slug, supplier: supplier.id, category: category.id, columnsImport: columns.id, readyImport: ready.id, special: special.id, order: order.id, orderNumber: order.number, orderToken };
   } finally {
     await db.$disconnect();
   }

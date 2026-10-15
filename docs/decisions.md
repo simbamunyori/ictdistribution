@@ -164,3 +164,32 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
   our own stock instead of being bought per order is still to be decided;
   until then a line nobody supplies is flagged to Procurement to buy by
   hand.
+
+## D7
+
+- **Freight is estimated from the median cost per chargeable kilogram**
+  over the most recent arrived shipments on each route (origin country and
+  mode into our country), not an average, so one unusual shipment doesn't
+  move prices. Staff figures win field by field.
+- **The supplier's allowance stays as the fallback.** A product without a
+  boxed weight, or a route without history, keeps using the supplier's
+  landed cost percentage, so nothing goes unpriced while records are
+  loaded.
+- **Duty is worked out for one country**: the default warehouse's, since
+  that is where goods are cleared. Goods from a supplier in that country
+  pay none. VAT is left out because it is claimed back.
+- **Sample shipments are seeded and marked (demo)** because the business
+  has not yet supplied its own records. They are flagged at start-up until
+  replaced.
+- **Stock first, then buy.** A paid order takes free stock when there is
+  enough for the whole line; part lines are bought in full rather than
+  split. Bundles are always bought. Admins can switch stock off.
+- **Drop-shipping is off by default.** Turning it on shows the customer's
+  name, phone and address to the supplier on the purchase order, which D6
+  otherwise never does. It is an Admin rule, and staff can change it per
+  purchase order before it is sent.
+- **Tracking moves forward by itself and back only by hand.** Customers
+  see steps and times, never notes or who recorded them, since those can
+  name a supplier.
+- **Marking an order sent still works** without deliveries: it takes what
+  is kept in stock for the order and moves its lines out for delivery.

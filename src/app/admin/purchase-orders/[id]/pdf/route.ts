@@ -13,7 +13,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   const po = await prisma.purchaseOrder.findUnique({ where: { id: (await params).id }, include: SUPPLIER_PO_INCLUDE, omit: SUPPLIER_PO_OMIT });
   if (!po) return new Response("Not found", { status: 404 });
   const e = env();
-  const bytes = await purchaseOrderPdf(po, { appUrl: e.APP_URL, legalName: e.COMPANY_LEGAL_NAME, ...(await poTerms(prisma)), timeZone: DEFAULT_TIME_ZONE });
+  const bytes = await purchaseOrderPdf(po, { appUrl: e.APP_URL, legalName: e.COMPANY_LEGAL_NAME, ...(await poTerms(prisma, po.id)), timeZone: DEFAULT_TIME_ZONE });
   return new Response(Buffer.from(bytes), {
     headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${po.number}.pdf"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" },
   });

@@ -1,8 +1,9 @@
 import type { PrismaClient, SourcingRule } from "@prisma/client";
-import { customerPrice } from "@/lib/pricing";
+import { customerPrice, toBase } from "@/lib/pricing";
 import { chooseOffer, resolveRule, SOURCING_RULE_LABEL } from "@/lib/sourcing";
 import { audit, staffAudit } from "@/server/audit";
 import { DomainError } from "@/server/errors";
+import { landedAdder, landedContext, unitLanded } from "@/server/logistics/landed";
 import { asRate, currentRates, pricingSettings } from "@/server/pricing/rates";
 import { refreshCosts } from "@/server/shop/costs";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
@@ -17,16 +18,35 @@ export async function productSourcing(db: PrismaClient, productId: string) {
   const [product, settings] = await Promise.all([
     db.product.findUnique({
       where: { id: productId },
-      select: { sourcingRule: true, category: { select: { sourcingRule: true, name: true, parent: { select: { sourcingRule: true, name: true } } } }, offers: { include: { supplier: true }, orderBy: { costMinor: "asc" } } },
+      select: {
+        sourcingRule: true,
+        weightGrams: true,
+        lengthMm: true,
+        widthMm: true,
+        heightMm: true,
+        categoryId: true,
+        category: { select: { sourcingRule: true, name: true, parentId: true, parent: { select: { sourcingRule: true, name: true } } } },
+        offers: { include: { supplier: true }, orderBy: { costMinor: "asc" } },
+      },
     }),
     pricingSettings(db),
   ]);
   if (!product) throw new DomainError("not-found", "No such product.");
-  const rates = await currentRates(db, settings.baseCurrency);
+  const [rates, logistics] = await Promise.all([currentRates(db, settings.baseCurrency), landedContext(db)]);
+  const forLanded = { ...product, parentCategoryId: product.category.parentId };
   const rule = resolveRule(product.sourcingRule, product.category.sourcingRule, product.category.parent?.sourcingRule, settings.sourcingRule);
   const ruleFrom = product.sourcingRule ? "this product" : product.category.sourcingRule ? product.category.name : product.category.parent?.sourcingRule ? product.category.parent.name : "the default";
-  const choice = chooseOffer(product.offers, rule, settings.baseCurrency, (c) => asRate(rates.get(c)));
-  return { ...choice, ruleFrom, base: settings.baseCurrency };
+  const choice = chooseOffer(product.offers, rule, settings.baseCurrency, (c) => asRate(rates.get(c)), landedAdder(logistics, forLanded));
+  // For staff: how each landed cost was made up, when it came from the estimates.
+  const costBase = (o: (typeof product.offers)[number]) => {
+    const rate = o.currency === settings.baseCurrency ? null : asRate(rates.get(o.currency));
+    return o.currency === settings.baseCurrency || rate ? toBase({ amountMinor: o.costMinor, currency: o.currency }, settings.baseCurrency, rate).amountMinor : null;
+  };
+  const breakdown = new Map(choice.ranked.map((r) => {
+    const cost = r.landed ? costBase(r.offer) : null;
+    return [r.offer.id, cost === null ? null : unitLanded(logistics, forLanded, r.offer.supplier, cost)] as const;
+  }));
+  return { ...choice, ruleFrom, base: settings.baseCurrency, breakdown };
 }
 
 /**

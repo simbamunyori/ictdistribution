@@ -1,10 +1,12 @@
 import type { PrismaClient } from "@prisma/client";
 import { chooseOffer, resolveRule } from "@/lib/sourcing";
+import { landedAdder, landedContext } from "@/server/logistics/landed";
 import { asRate, currentRates, pricingSettings } from "@/server/pricing/rates";
 
 /**
  * Keeps each product's landed cost (and lead time) in step with its
- * offers, the sourcing rules and the exchange rates, so shop pages price
+ * offers, the sourcing rules, the exchange rates and the freight and
+ * duty estimates, so shop pages price
  * products without reading offers. Internal: the shop shows prices made
  * from it, never the cost.
  *
@@ -15,6 +17,7 @@ export async function refreshCosts(db: PrismaClient, productIds?: string[], now 
   const settings = await pricingSettings(db);
   const rates = await currentRates(db, settings.baseCurrency);
   const rate = (c: string) => asRate(rates.get(c));
+  const logistics = await landedContext(db);
   let changed = 0;
   let cursor: string | undefined;
   for (;;) {
@@ -25,7 +28,12 @@ export async function refreshCosts(db: PrismaClient, productIds?: string[], now 
         sourcingRule: true,
         landedCostMinor: true,
         leadTimeDays: true,
-        category: { select: { sourcingRule: true, parent: { select: { sourcingRule: true } } } },
+        weightGrams: true,
+        lengthMm: true,
+        widthMm: true,
+        heightMm: true,
+        categoryId: true,
+        category: { select: { sourcingRule: true, parentId: true, parent: { select: { sourcingRule: true } } } },
         offers: { include: { supplier: true } },
       },
       orderBy: { id: "asc" },
@@ -35,7 +43,7 @@ export async function refreshCosts(db: PrismaClient, productIds?: string[], now 
     if (!batch.length) break;
     for (const p of batch) {
       const rule = resolveRule(p.sourcingRule, p.category.sourcingRule, p.category.parent?.sourcingRule, settings.sourcingRule);
-      const chosen = chooseOffer(p.offers, rule, settings.baseCurrency, rate).chosen;
+      const chosen = chooseOffer(p.offers, rule, settings.baseCurrency, rate, landedAdder(logistics, { ...p, parentCategoryId: p.category.parentId })).chosen;
       const landed = chosen?.landed?.amountMinor ?? null;
       const lead = chosen ? chosen.leadTimeDays : null;
       if (landed !== p.landedCostMinor || lead !== p.leadTimeDays) {

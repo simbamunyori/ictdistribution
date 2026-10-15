@@ -96,6 +96,10 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
             sellToIndividuals: product.sellToIndividuals,
             status: product.status,
             sourcingRule: product.sourcingRule ?? "",
+            weightKg: product.weightGrams ? String(product.weightGrams / 1000) : "",
+            lengthCm: product.lengthMm ? String(product.lengthMm / 10) : "",
+            widthCm: product.widthMm ? String(product.widthMm / 10) : "",
+            heightCm: product.heightMm ? String(product.heightMm / 10) : "",
           }}
         />
       </Card>
@@ -195,7 +199,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
         <Card className="mb-6">
           <h2 className="mb-1 text-headline font-bold">Suppliers</h2>
           <p className="mb-4 text-ink-muted">
-            Staff only. Chosen by <strong className="text-ink">{SOURCING_RULE_LABEL[sourcing.rule]}</strong>, set by {sourcing.ruleFrom}. Landed cost is their price plus the supplier&apos;s freight, duties and clearing allowance, in {sourcing.base}.
+            Staff only. Chosen by <strong className="text-ink">{SOURCING_RULE_LABEL[sourcing.rule]}</strong>, set by {sourcing.ruleFrom}. Landed cost is their price plus freight, insurance, duty and clearing, in {sourcing.base}: estimated from our shipments when this product has a weight and the route has history, else the supplier&apos;s allowance.
           </p>
           {sourcing.ranked.length ? (
             <TableWrap label="Supplier offers">
@@ -222,7 +226,14 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
                         {r.unavailable ? <span className="block text-caption text-warning">{r.unavailable}</span> : null}
                       </td>
                       <td className={cn(td, "tabular-nums")}>{formatMoney({ amountMinor: r.offer.costMinor, currency: r.offer.currency }, "en")}</td>
-                      <td className={cn(td, "tabular-nums")}>{r.landed ? formatMoney(r.landed, "en") : "Not known"}</td>
+                      <td className={cn(td, "tabular-nums")}>
+                        {r.landed ? formatMoney(r.landed, "en") : "Not known"}
+                        {(() => {
+                          const b = sourcing.breakdown.get(r.offer.id);
+                          const m = (n: bigint) => formatMoney({ amountMinor: n, currency: sourcing.base }, "en");
+                          return r.landed ? <span className="block text-caption text-ink-muted">{b ? `Freight ${m(b.freight)}, insurance ${m(b.insurance)}, duty ${b.dutyExempt ? "none" : m(b.duty)}, fees ${m(b.fees)}` : `Allowance of ${r.offer.supplier.landedCostBps / 100}%`}</span> : null;
+                        })()}
+                      </td>
                       <td className={cn(td, "tabular-nums")}>{r.leadTimeDays} days</td>
                       <td className={cn(td, "tabular-nums")}>{r.offer.stock ?? "Not given"}</td>
                       <td className={cn(td, "tabular-nums")}>

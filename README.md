@@ -87,6 +87,11 @@ The integration tests empty and reseed `TEST_DATABASE_URL` (it must end in
 | Orders from quotes and pro forma invoices | `src/server/shop/orders.ts`, `src/server/shop/pro-forma.ts` | /admin/orders |
 | Purchase orders, approval and supplier pages | `src/server/procurement/` | /admin/purchase-orders |
 | Purchase order rules (pure) | `src/lib/procurement.ts` | /admin/purchase-orders/rules |
+| Freight estimates, landed cost and duty | `src/lib/freight.ts`, `src/server/logistics/landed.ts` | /admin/logistics/estimates, /admin/logistics/duty |
+| Shipments and past shipment imports | `src/server/logistics/shipments.ts` | /admin/logistics |
+| Warehouses and stock | `src/server/logistics/stock.ts` | /admin/stock |
+| Tracking per order line | `src/server/logistics/tracking.ts` | /admin/orders |
+| Deliveries, delivery notes, commercial invoices, proof of delivery | `src/server/logistics/deliveries.ts`, `src/server/logistics/documents.ts` | /admin/deliveries |
 | Background jobs | `src/server/jobs/boss.ts` | |
 
 Business rules (markups, buffers, rounding, rate rules, sourcing rules, who is staff) live
@@ -103,5 +108,6 @@ catalogue, suppliers and price list imports: [docs/catalogue.md](docs/catalogue.
 shop, specials and orders: [docs/shop.md](docs/shop.md). Business
 customers, trade prices and credit: [docs/business.md](docs/business.md). Quotes:
 [docs/quotes.md](docs/quotes.md). Orders, purchase orders and suppliers'
-pages: [docs/procurement.md](docs/procurement.md). Choices
+pages: [docs/procurement.md](docs/procurement.md). Shipments, landed
+cost, stock and deliveries: [docs/logistics.md](docs/logistics.md). Choices
 made along the way: [docs/decisions.md](docs/decisions.md).

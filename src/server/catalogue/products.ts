@@ -94,6 +94,24 @@ export interface ProductInput {
   sellToIndividuals: boolean;
   status: ProductStatus;
   sourcingRule: SourcingRule | null;
+  /** Boxed, for freight estimates. Empty for not known; left out keeps what is there. */
+  weightKg?: string;
+  lengthCm?: string;
+  widthCm?: string;
+  heightCm?: string;
+}
+
+/** "1.25" kilograms as grams, or centimetres as millimetres. Null when empty, undefined when not given. */
+function measure(text: string | undefined, scale: number, max: number, field: string, label: string, errors: Record<string, string>): number | null | undefined {
+  if (text === undefined) return undefined;
+  const t = text.trim().replace(",", ".");
+  if (!t) return null;
+  const n = Number(t);
+  if (!/^\d+(\.\d+)?$/.test(t) || !Number.isFinite(n) || n <= 0 || n > max) {
+    errors[field] = `Enter ${label} above 0 and up to ${max}.`;
+    return null;
+  }
+  return Math.max(1, Math.round(n * scale));
 }
 
 function checkProduct(input: ProductInput) {
@@ -120,8 +138,14 @@ function checkProduct(input: ProductInput) {
   if (input.sourcingRule && !RULES.includes(input.sourcingRule)) fieldErrors.sourcingRule = "Choose a rule.";
   const slug = slugify(input.slug?.trim() || `${brand} ${name}`);
   if (input.slug?.trim() && !slug) fieldErrors.slug = "Use letters or digits.";
+  const size = {
+    weightGrams: measure(input.weightKg, 1000, 5000, "weightKg", "the weight in kilograms", fieldErrors),
+    lengthMm: measure(input.lengthCm, 10, 1000, "lengthCm", "centimetres", fieldErrors),
+    widthMm: measure(input.widthCm, 10, 1000, "widthCm", "centimetres", fieldErrors),
+    heightMm: measure(input.heightCm, 10, 1000, "heightCm", "centimetres", fieldErrors),
+  };
   if (Object.keys(fieldErrors).length) throw new DomainError("invalid", "Check the highlighted fields.", undefined, fieldErrors);
-  return { name, brand, mpn, summary, description, warrantyTerms, warrantyMonths, slug };
+  return { name, brand, mpn, summary, description, warrantyTerms, warrantyMonths, slug, size };
 }
 
 async function uniqueSlug(tx: Tx, wanted: string, id: string | null, explicit: boolean) {
@@ -154,7 +178,7 @@ export async function createProduct(db: PrismaClient, actor: StaffActor, input: 
     if (await tx.product.findUnique({ where: { brandId_mpn: { brandId: brand.id, mpn: v.mpn } } })) throw new DomainError("conflict", `There is already a ${brand.name} product with this part number.`, "mpn");
     const slug = await uniqueSlug(tx, v.slug, null, Boolean(input.slug?.trim()));
     const p = await tx.product.create({
-      data: { name: v.name, brandId: brand.id, mpn: v.mpn, mpnKey: mpnKey(v.mpn), categoryId: input.categoryId, slug, summary: v.summary, description: v.description, warrantyMonths: v.warrantyMonths, warrantyTerms: v.warrantyTerms, sellToIndividuals: input.sellToIndividuals, status: input.status, sourcingRule: input.sourcingRule },
+      data: { name: v.name, brandId: brand.id, mpn: v.mpn, mpnKey: mpnKey(v.mpn), categoryId: input.categoryId, slug, summary: v.summary, description: v.description, warrantyMonths: v.warrantyMonths, warrantyTerms: v.warrantyTerms, sellToIndividuals: input.sellToIndividuals, status: input.status, sourcingRule: input.sourcingRule, ...v.size },
     });
     await refreshSearchText(tx, p.id);
     await audit(tx, staffAudit(actor, { action: "product.created", summary: `Added ${brand.name} ${v.name} (${v.mpn})`, targetType: "Product", targetId: p.id, ipAddress: ip }));
@@ -175,7 +199,7 @@ export async function updateProduct(db: PrismaClient, actor: StaffActor, id: str
     const slug = input.slug?.trim() ? await uniqueSlug(tx, v.slug, id, true) : before.slug;
     const after = await tx.product.update({
       where: { id },
-      data: { name: v.name, brandId: brand.id, mpn: v.mpn, mpnKey: mpnKey(v.mpn), categoryId: input.categoryId, slug, summary: v.summary, description: v.description, warrantyMonths: v.warrantyMonths, warrantyTerms: v.warrantyTerms, sellToIndividuals: input.sellToIndividuals, status: input.status, sourcingRule: input.sourcingRule },
+      data: { name: v.name, brandId: brand.id, mpn: v.mpn, mpnKey: mpnKey(v.mpn), categoryId: input.categoryId, slug, summary: v.summary, description: v.description, warrantyMonths: v.warrantyMonths, warrantyTerms: v.warrantyTerms, sellToIndividuals: input.sellToIndividuals, status: input.status, sourcingRule: input.sourcingRule, ...v.size },
     });
     await refreshSearchText(tx, id);
     const changes: string[] = [];
@@ -186,6 +210,7 @@ export async function updateProduct(db: PrismaClient, actor: StaffActor, id: str
     if (before.sellToIndividuals !== input.sellToIndividuals) changes.push(input.sellToIndividuals ? "sold to individuals" : "sold to businesses only");
     if (before.sourcingRule !== input.sourcingRule) changes.push("supplier rule");
     if (before.slug !== slug) changes.push(`address to /products/${slug}`);
+    if ((["weightGrams", "lengthMm", "widthMm", "heightMm"] as const).some((k) => v.size[k] !== undefined && v.size[k] !== before[k])) changes.push("weight or size");
     if (before.summary !== v.summary || before.description !== v.description || before.warrantyMonths !== v.warrantyMonths || before.warrantyTerms !== v.warrantyTerms) changes.push("details");
     if (changes.length) await audit(tx, staffAudit(actor, { action: "product.updated", summary: `Changed ${before.brand.name} ${before.name}: ${changes.join(", ")}`, targetType: "Product", targetId: id, ipAddress: ip }));
     return after;

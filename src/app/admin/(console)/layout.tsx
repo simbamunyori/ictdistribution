@@ -8,6 +8,8 @@ import { company } from "@/config/app";
 import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
 import { waitingChecks } from "@/server/accounts/verification";
+import { deliveriesWaiting } from "@/server/logistics/deliveries";
+import { shipmentsOnTheWay } from "@/server/logistics/shipments";
 import { purchaseOrdersWaiting } from "@/server/procurement/purchase-orders";
 import { quotesWaiting } from "@/server/quotes/staff";
 import { ordersWaiting } from "@/server/shop/orders";
@@ -26,7 +28,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const canCredit = staffCan({ staffRole: role }, "manageCredit");
   const canQuotes = staffCan({ staffRole: role }, "viewQuotes");
   const canPurchaseOrders = staffCan({ staffRole: role }, "viewPurchaseOrders");
-  const [held, lists, waiting, checks, applications, quotes, pos, theme] = await Promise.all([
+  const canLogistics = staffCan({ staffRole: role }, "viewLogistics");
+  const [held, lists, waiting, checks, applications, quotes, pos, onTheWay, deliveries, theme] = await Promise.all([
     prisma.exchangeRate.count({ where: { heldBack: { not: null } } }),
     canSuppliers ? waitingImports(prisma) : 0,
     canOrders ? ordersWaiting(prisma) : null,
@@ -34,6 +37,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     canCredit ? prisma.creditApplication.count({ where: { status: "PENDING" } }) : 0,
     canQuotes ? quotesWaiting(prisma) : null,
     canPurchaseOrders ? purchaseOrdersWaiting(prisma) : null,
+    canLogistics ? shipmentsOnTheWay(prisma) : 0,
+    canLogistics ? deliveriesWaiting(prisma) : null,
     currentTheme(),
   ]);
   const items: AdminNavItem[] = [
@@ -41,6 +46,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     ...(canOrders ? [{ href: "/admin/orders", label: "Orders", badge: waiting ? waiting.payment + waiting.toSend || undefined : undefined }] : []),
     ...(canQuotes ? [{ href: "/admin/quotes", label: "Quotes", badge: quotes ? quotes.review + quotes.byHand || undefined : undefined }] : []),
     ...(canPurchaseOrders ? [{ href: "/admin/purchase-orders", label: "Purchase orders", badge: pos ? pos.approve + pos.byHand || undefined : undefined }] : []),
+    ...(canLogistics
+      ? [
+          { href: "/admin/logistics", label: "Shipments", badge: onTheWay || undefined },
+          { href: "/admin/deliveries", label: "Deliveries", badge: deliveries ? deliveries.packed + deliveries.onTheRoad || undefined : undefined },
+          { href: "/admin/stock", label: "Stock" },
+        ]
+      : []),
     ...(canCustomers ? [{ href: "/admin/customers", label: "Customers", badge: checks || undefined }] : []),
     ...(canCredit ? [{ href: "/admin/credit", label: "Credit", badge: applications || undefined }] : []),
     { href: "/admin/products", label: "Products" },

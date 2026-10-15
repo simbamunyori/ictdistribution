@@ -1,4 +1,4 @@
-import type { PrismaClient, Supplier, SupplierEventKind, SupplierKind } from "@prisma/client";
+import type { PrismaClient, ShipMode, Supplier, SupplierEventKind, SupplierKind } from "@prisma/client";
 import { isCountryCode } from "@/lib/countries";
 import { parseMoney, toPlainAmount } from "@/lib/money";
 import { audit, staffAudit } from "@/server/audit";
@@ -15,6 +15,7 @@ import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 export const SUPPLIER_KIND_LABEL: Record<SupplierKind, string> = { LOCAL: "Local distributor", INTERNATIONAL: "International", CHINA: "China-based" };
 export const EVENT_KIND_LABEL: Record<SupplierEventKind, string> = { ON_TIME: "Delivered on time", LATE: "Delivered late", QUALITY_ISSUE: "Quality problem", WRONG_ITEM: "Wrong item sent", NOTE: "Note" };
 const KINDS: SupplierKind[] = ["LOCAL", "INTERNATIONAL", "CHINA"];
+const MODES: ShipMode[] = ["AIR", "SEA", "ROAD", "COURIER"];
 const EVENT_KINDS: SupplierEventKind[] = ["ON_TIME", "LATE", "QUALITY_ISSUE", "WRONG_ITEM", "NOTE"];
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -85,6 +86,8 @@ export interface SupplierInput {
   leadTimeDays: string;
   minOrder: string;
   landedCostPercent: string;
+  /** How their goods usually travel to us. Left out keeps what is there (road for new suppliers). */
+  freightMode?: string;
   preferred: boolean;
   active: boolean;
 }
@@ -112,6 +115,8 @@ async function checkSupplier(db: Pick<PrismaClient, "currency">, input: Supplier
   if (notes.length > 4000) fieldErrors.notes = "Keep it under 4,000 characters.";
   const leadTimeDays = Number(input.leadTimeDays);
   if (!Number.isInteger(leadTimeDays) || leadTimeDays < 0 || leadTimeDays > 365) fieldErrors.leadTimeDays = "Enter whole days, 0 to 365.";
+  const freightMode = input.freightMode === undefined || input.freightMode === "" ? undefined : (input.freightMode as ShipMode);
+  if (freightMode && !MODES.includes(freightMode)) fieldErrors.freightMode = "Choose how their goods travel.";
   const landed = Number(input.landedCostPercent || "0");
   if (!Number.isFinite(landed) || landed < 0 || landed > 200) fieldErrors.landedCostPercent = "Enter a percentage from 0 to 200.";
   let minOrderMinor: bigint | null = null;
@@ -124,7 +129,7 @@ async function checkSupplier(db: Pick<PrismaClient, "currency">, input: Supplier
     }
   }
   if (Object.keys(fieldErrors).length) throw new DomainError("invalid", "Check the highlighted fields.", undefined, fieldErrors);
-  return { name, kind: input.kind, country, currency, email, whatsapp, phone, website, portalUrl, notes, leadTimeDays, minOrderMinor, landedCostBps: Math.round(landed * 100), preferred: input.preferred, active: input.active };
+  return { name, kind: input.kind, country, currency, email, whatsapp, phone, website, portalUrl, notes, leadTimeDays, minOrderMinor, landedCostBps: Math.round(landed * 100), ...(freightMode ? { freightMode } : {}), preferred: input.preferred, active: input.active };
 }
 
 export async function createSupplier(db: PrismaClient, actor: StaffActor, input: SupplierInput, ip?: string | null): Promise<Supplier> {
@@ -151,6 +156,7 @@ export async function updateSupplier(db: PrismaClient, actor: StaffActor, id: st
     if (before.active !== data.active) changes.push(data.active ? "switched on" : "switched off");
     if (before.preferred !== data.preferred) changes.push(data.preferred ? "marked preferred" : "no longer preferred");
     if (before.landedCostBps !== data.landedCostBps) changes.push(`landed cost allowance ${before.landedCostBps / 100}% to ${data.landedCostBps / 100}%`);
+    if (data.freightMode && before.freightMode !== data.freightMode) changes.push(`freight by ${data.freightMode.toLowerCase()}`);
     if (before.leadTimeDays !== data.leadTimeDays) changes.push(`lead time ${before.leadTimeDays} to ${data.leadTimeDays} days`);
     if (before.currency !== data.currency) changes.push(`currency to ${data.currency}`);
     if (!changes.length) changes.push("details");

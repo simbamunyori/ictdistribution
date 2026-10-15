@@ -57,6 +57,7 @@ export interface CategoryFormValues {
   sortOrder: string;
   active: boolean;
   sourcingRule: string;
+  hsCode: string;
 }
 
 export function CategoryForm({ category, parents, readOnly }: { category: CategoryFormValues; parents: Option[]; readOnly: boolean }) {
@@ -72,6 +73,7 @@ export function CategoryForm({ category, parents, readOnly }: { category: Catego
         <SelectField id="parentId" label="Sits under" options={parents} placeholder="Nothing (a top-level category)" defaultValue={v.parentId ?? category.parentId} error={err.parentId} disabled={readOnly} />
         <SelectField id="sourcingRule" label="Supplier rule" options={RULE_OPTIONS} placeholder="Follow the parent or the default" defaultValue={v.sourcingRule ?? category.sourcingRule} error={err.sourcingRule} disabled={readOnly} />
         <TextField id="sortOrder" label="Order in lists" inputMode="numeric" defaultValue={v.sortOrder ?? category.sortOrder} error={err.sortOrder} disabled={readOnly} />
+        <TextField id="hsCode" label="Customs tariff (HS) code (optional)" inputMode="numeric" defaultValue={v.hsCode ?? category.hsCode} error={err.hsCode} disabled={readOnly} hint="For commercial invoices. Empty follows the category above." />
       </div>
       <TextAreaField id="description" label="Description" rows={2} defaultValue={v.description ?? category.description} error={err.description} disabled={readOnly} />
       <CheckboxField id="active" label="Show in the shop" hint="Hidden categories keep their products out of the shop." defaultChecked={category.active} disabled={readOnly} />
@@ -165,6 +167,10 @@ export interface ProductFormValues {
   sellToIndividuals: boolean;
   status: string;
   sourcingRule: string;
+  weightKg: string;
+  lengthCm: string;
+  widthCm: string;
+  heightCm: string;
 }
 
 const STATUS_OPTIONS: Option[] = [
@@ -196,6 +202,16 @@ export function ProductForm({ product, categories, brands, readOnly }: { product
         <SelectField id="sourcingRule" label="Supplier rule" options={RULE_OPTIONS} placeholder="Follow the category" defaultValue={v.sourcingRule ?? product.sourcingRule} error={err.sourcingRule} disabled={readOnly} />
         <TextField id="slug" label={product.id ? "Address" : "Address (optional)"} defaultValue={v.slug ?? product.slug} error={err.slug} disabled={readOnly} hint={product.id ? "Changing it breaks links people have saved." : "Made from the brand and name when left empty."} />
       </div>
+      <fieldset className="flex flex-col gap-3">
+        <legend className="mb-2 font-semibold">Boxed for shipping</legend>
+        <p className="text-callout text-ink-muted">One unit in its box. Freight and duty are estimated from these; without them the supplier&apos;s landed cost allowance is used.</p>
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <TextField id="weightKg" label="Weight (kg)" inputMode="decimal" defaultValue={v.weightKg ?? product.weightKg} error={err.weightKg} disabled={readOnly} />
+          <TextField id="lengthCm" label="Length (cm)" inputMode="decimal" defaultValue={v.lengthCm ?? product.lengthCm} error={err.lengthCm} disabled={readOnly} />
+          <TextField id="widthCm" label="Width (cm)" inputMode="decimal" defaultValue={v.widthCm ?? product.widthCm} error={err.widthCm} disabled={readOnly} />
+          <TextField id="heightCm" label="Height (cm)" inputMode="decimal" defaultValue={v.heightCm ?? product.heightCm} error={err.heightCm} disabled={readOnly} />
+        </div>
+      </fieldset>
       <TextAreaField id="summary" label="Summary" rows={2} defaultValue={v.summary ?? product.summary} error={err.summary} disabled={readOnly} hint="One or two sentences for cards and search results." />
       <TextAreaField id="description" label="Description" rows={6} defaultValue={v.description ?? product.description} error={err.description} disabled={readOnly} hint="Blank lines start new paragraphs." />
       <CheckboxField id="sellToIndividuals" label="Sell to individuals" hint="Shown with a price to everyone in the shop. Otherwise shoppers are asked to register a business." defaultChecked={product.sellToIndividuals} disabled={readOnly} />
@@ -337,9 +353,17 @@ export interface SupplierFormValues {
   leadTimeDays: string;
   minOrder: string;
   landedCostPercent: string;
+  freightMode: string;
   preferred: boolean;
   active: boolean;
 }
+
+const MODE_OPTIONS: Option[] = [
+  { value: "ROAD", label: "Road" },
+  { value: "AIR", label: "Air freight" },
+  { value: "SEA", label: "Sea freight" },
+  { value: "COURIER", label: "Courier" },
+];
 
 const KIND_OPTIONS: Option[] = [
   { value: "LOCAL", label: "Local distributor" },
@@ -366,7 +390,8 @@ export function SupplierForm({ supplier, countries, currencies, readOnly }: { su
         <TextField id="website" label="Website (optional)" defaultValue={v.website ?? supplier.website} error={err.website} disabled={readOnly} />
         <TextField id="leadTimeDays" label="Usual lead time (days)" inputMode="numeric" defaultValue={v.leadTimeDays ?? supplier.leadTimeDays} error={err.leadTimeDays} disabled={readOnly} hint="From our order to goods in our hands." />
         <TextField id="minOrder" label="Minimum order value (optional)" inputMode="decimal" defaultValue={v.minOrder ?? supplier.minOrder} error={err.minOrder} disabled={readOnly} hint="In their currency." />
-        <TextField id="landedCostPercent" label="Freight, duties and clearing %" inputMode="decimal" defaultValue={v.landedCostPercent ?? supplier.landedCostPercent} error={err.landedCostPercent} disabled={readOnly} hint="Added to their prices to compare landed cost, until shipments are costed one by one." />
+        <TextField id="landedCostPercent" label="Freight, duties and clearing %" inputMode="decimal" defaultValue={v.landedCostPercent ?? supplier.landedCostPercent} error={err.landedCostPercent} disabled={readOnly} hint="Used when freight can't be estimated: a product without its weight, or a route with no shipments yet." />
+        <SelectField id="freightMode" label="How their goods travel to us" options={MODE_OPTIONS} defaultValue={v.freightMode ?? supplier.freightMode} error={err.freightMode} disabled={readOnly} hint="Freight is estimated from our shipments on this route and mode." />
       </div>
       <TextAreaField id="notes" label="Notes" rows={3} defaultValue={v.notes ?? supplier.notes} error={err.notes} disabled={readOnly} />
       <CheckboxField id="preferred" label="Preferred supplier" hint="Chosen first where the supplier rule is Preferred supplier." defaultChecked={supplier.preferred} disabled={readOnly} />

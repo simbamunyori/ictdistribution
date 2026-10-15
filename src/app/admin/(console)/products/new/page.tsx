@@ -29,7 +29,7 @@ export default async function NewProduct({ searchParams }: { searchParams: Promi
           readOnly={false}
           categories={categories}
           brands={brands}
-          product={{ name: "", brand: "", mpn: "", categoryId: q.category ?? "", slug: "", summary: "", description: "", warrantyMonths: "12", warrantyTerms: "Manufacturer, carry-in", sellToIndividuals: false, status: "DRAFT", sourcingRule: "" }}
+          product={{ name: "", brand: "", mpn: "", categoryId: q.category ?? "", slug: "", summary: "", description: "", warrantyMonths: "12", warrantyTerms: "Manufacturer, carry-in", sellToIndividuals: false, status: "DRAFT", sourcingRule: "", weightKg: "", lengthCm: "", widthCm: "", heightCm: "" }}
         />
       </Card>
     </>

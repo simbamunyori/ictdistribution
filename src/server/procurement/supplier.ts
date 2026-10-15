@@ -4,9 +4,10 @@ import { audit, staffAudit, SYSTEM_ACTOR } from "@/server/audit";
 import { hashToken } from "@/server/auth/tokens";
 import { queueEmail } from "@/server/email/outbox";
 import { DomainError } from "@/server/errors";
+import { advanceLines, poLineIds } from "@/server/logistics/tracking";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 import { DOCUMENT_KIND_LABEL, procurementAddresses, procurementSettings } from "./common";
-import type { PoDeps } from "./purchase-orders";
+import { deliverToFor, type PoDeps } from "./purchase-orders";
 
 /**
  * The supplier's side of a purchase order, on the page their link opens
@@ -139,6 +140,7 @@ export async function shipPurchaseOrder(db: PrismaClient, deps: PoDeps, who: PoA
     if (Object.keys(errors).length) throw new DomainError("invalid", "Check the highlighted fields.", undefined, errors);
     for (const [id, list] of serials) await tx.purchaseOrderLine.update({ where: { id }, data: { serials: list.join("\n") } });
     await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: "SHIPPED", shippedAt: shipped, shippingReference, confirmedAt: po.confirmedAt ?? now, sentAt: po.sentAt ?? now } });
+    await advanceLines(tx, await poLineIds(tx, [po.id]), "SHIPPED", "actor" in who ? who.actor.name : po.supplier.name, shippingReference ? `Waybill ${shippingReference}` : "", shipped ?? now);
     const count = [...serials.values()].reduce((s, l) => s + l.length, 0);
     await tell(tx, deps, who, po, `shipped it on ${input.shippedOn.trim()}${shippingReference ? `, waybill ${shippingReference}` : ""}${count ? `, with ${count} serial ${count === 1 ? "number" : "numbers"}` : ""}`, "po.shipped");
   });
@@ -185,9 +187,9 @@ export async function readPoDocument(db: Pick<PrismaClient, "purchaseOrderDocume
 }
 
 /** For the purchase order page and PDF: where to deliver and how we pay. */
-export async function poTerms(db: Pick<PrismaClient, "procurementSettings">) {
-  const s = await procurementSettings(db);
-  return { deliverTo: s.deliverTo, paymentTerms: s.paymentTerms };
+export async function poTerms(db: PrismaClient, poId: string) {
+  const [s, po] = await Promise.all([procurementSettings(db), db.purchaseOrder.findUnique({ where: { id: poId }, select: { dropShip: true, warehouseId: true, orderId: true } })]);
+  return { deliverTo: po ? await deliverToFor(db, po, s.deliverTo) : s.deliverTo, paymentTerms: s.paymentTerms };
 }
 
 // ─── Forms ───────────────────────────────────────────────────────────

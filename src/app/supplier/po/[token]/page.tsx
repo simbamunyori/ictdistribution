@@ -28,7 +28,7 @@ export default async function SupplierPoPage({ params }: { params: Promise<{ tok
       </>
     );
   }
-  const terms = await poTerms(prisma);
+  const terms = await poTerms(prisma, po.id);
   const date = (d: Date) => formatDate(d, company.staffLocale, DEFAULT_TIME_ZONE);
   const lines = poFormLines(po);
   const given = poFormGiven(po);

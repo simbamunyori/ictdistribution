@@ -32,11 +32,11 @@ async function upload(form: FormData, key = "file") {
 
 // ─── Categories ──────────────────────────────────────────────────────
 
-const CATEGORY_FIELDS = ["name", "slug", "description", "parentId", "sortOrder", "sourcingRule"];
+const CATEGORY_FIELDS = ["name", "slug", "description", "parentId", "sortOrder", "sourcingRule", "hsCode"];
 
 function categoryInput(form: FormData): CategoryInput {
   const v = pick(form, CATEGORY_FIELDS);
-  return { name: v.name, slug: v.slug, description: v.description, parentId: v.parentId || null, sortOrder: v.sortOrder.trim() === "" ? 0 : Number(v.sortOrder), active: on(form, "active"), sourcingRule: rule(v.sourcingRule) };
+  return { name: v.name, slug: v.slug, description: v.description, parentId: v.parentId || null, sortOrder: v.sortOrder.trim() === "" ? 0 : Number(v.sortOrder), active: on(form, "active"), sourcingRule: rule(v.sourcingRule), hsCode: v.hsCode };
 }
 
 export async function categoryAction(_: ActionState, form: FormData): Promise<ActionState> {
@@ -107,7 +107,7 @@ export async function removeSpecFieldAction(_: ActionState, form: FormData): Pro
 
 // ─── Products ────────────────────────────────────────────────────────
 
-const PRODUCT_FIELDS = ["name", "brand", "mpn", "categoryId", "slug", "summary", "description", "warrantyMonths", "warrantyTerms", "status", "sourcingRule"];
+const PRODUCT_FIELDS = ["name", "brand", "mpn", "categoryId", "slug", "summary", "description", "warrantyMonths", "warrantyTerms", "status", "sourcingRule", "weightKg", "lengthCm", "widthCm", "heightCm"];
 
 function productInput(form: FormData): ProductInput {
   const v = pick(form, PRODUCT_FIELDS);
@@ -199,7 +199,7 @@ export async function linkAction(_: ActionState, form: FormData): Promise<Action
 
 // ─── Suppliers ───────────────────────────────────────────────────────
 
-const SUPPLIER_FIELDS = ["name", "kind", "country", "currency", "email", "whatsapp", "phone", "website", "portalUrl", "notes", "leadTimeDays", "minOrder", "landedCostPercent"];
+const SUPPLIER_FIELDS = ["name", "kind", "country", "currency", "email", "whatsapp", "phone", "website", "portalUrl", "notes", "leadTimeDays", "minOrder", "landedCostPercent", "freightMode"];
 
 function supplierInput(form: FormData): SupplierInput {
   const v = pick(form, SUPPLIER_FIELDS);

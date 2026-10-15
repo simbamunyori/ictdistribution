@@ -5,6 +5,7 @@ import type { Standing } from "@/lib/standing";
 import { currentSession } from "@/server/auth/next";
 import { prisma } from "@/server/db";
 import { currentMarket } from "@/server/markets/current";
+import { orderByToken, orderForCustomer } from "./orders";
 import { priceContext } from "./prices";
 
 /**
@@ -44,3 +45,12 @@ export const shopWhere = cache(async () => {
   const s = await shopper();
   return { locale: s.market.locale, timeZone: s.market.timeZone, standing: s.standing };
 });
+
+/** An order for whoever holds its emailed link (`token`), or the signed-in customer it belongs to. */
+export async function viewableOrder(number: string, token: string) {
+  const byLink = token ? await orderByToken(prisma, number, token) : null;
+  if (byLink) return { order: byLink, byLink: true };
+  const s = await shopper();
+  const order = s.user ? await orderForCustomer(prisma, number, { userId: s.user.id, organisationId: s.organisation?.id ?? null }) : null;
+  return order ? { order, byLink: false } : null;
+}

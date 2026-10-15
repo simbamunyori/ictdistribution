@@ -18,7 +18,7 @@ const isLocalhost = (value: string) => /@localhost\b|\/\/localhost\b|\/\/127\.0\
 
 type PlaceholderEnv = Pick<Env, "APP_URL" | "MAIL_FROM" | "NODE_ENV"> & { SMTP_URL?: string | null };
 
-type PlaceholderDb = Pick<PrismaClient, "user" | "market" | "exchangeRate" | "supplier" | "product" | "collectionPoint" | "special" | "procurementSettings">;
+type PlaceholderDb = Pick<PrismaClient, "user" | "market" | "exchangeRate" | "supplier" | "product" | "collectionPoint" | "special" | "procurementSettings" | "warehouse" | "shipment" | "dutyRule">;
 
 export async function findPlaceholders(db: PlaceholderDb, e: PlaceholderEnv): Promise<string[]> {
   const found: string[] = [];
@@ -33,6 +33,12 @@ export async function findPlaceholders(db: PlaceholderDb, e: PlaceholderEnv): Pr
   if (demoPoints) found.push(`${demoPoints} demo collection ${demoPoints === 1 ? "point is" : "points are"} open. Close them at /admin/markets.`);
   const procurement = await db.procurementSettings.findUnique({ where: { id: "global" } });
   if (procurement?.deliverTo.includes(DEMO_SUFFIX)) found.push("The delivery address on purchase orders is a demo. Set it at /admin/purchase-orders/rules.");
+  const demoWarehouses = await db.warehouse.count({ where: { name: { endsWith: DEMO_SUFFIX }, active: true } });
+  if (demoWarehouses) found.push(`${demoWarehouses} demo ${demoWarehouses === 1 ? "warehouse is" : "warehouses are"} in use. Set up the real one and switch the demo off at /admin/stock.`);
+  const demoShipments = await db.shipment.count({ where: { notes: { contains: DEMO_SUFFIX } } });
+  if (demoShipments) found.push(`${demoShipments} sample ${demoShipments === 1 ? "shipment is" : "shipments are"} a demo, and freight estimates use them. Load your own at /admin/logistics/import and remove the demo ones.`);
+  const demoDuty = await db.dutyRule.count({ where: { note: { contains: DEMO_SUFFIX } } });
+  if (demoDuty) found.push(`${demoDuty} duty ${demoDuty === 1 ? "rule is" : "rules are"} a demo. Set the real rates at /admin/logistics/duty.`);
   const seeded = await db.exchangeRate.count({ where: { source: "seed" } });
   if (seeded) found.push(`${seeded} exchange ${seeded === 1 ? "rate is a demo value" : "rates are demo values"}. Fetch real ones at /admin/exchange-rates, or remove them.`);
   const demo = await db.user.findMany({ where: { email: { in: DEMO_EMAILS } }, select: { email: true } });
