@@ -97,6 +97,8 @@ The integration tests empty and reseed `TEST_DATABASE_URL` (it must end in
 | Returns | `src/server/portal/returns.ts` | /admin/returns, /account/returns |
 | Saved lists and buying again | `src/server/portal/lists.ts` | /account/lists |
 | Who sees what in a customer's account | `src/server/portal/scope.ts` | /account |
+| Serial numbers and warranty | `src/lib/warranty.ts`, `src/server/aftersales/units.ts` | /admin/warranty, /admin/orders, /account/warranty |
+| Repairs, replacements and credit notes | `src/server/portal/returns.ts`, `src/server/aftersales/credit-notes.ts` | /admin/returns, /account/returns |
 | Background jobs | `src/server/jobs/boss.ts` | |
 
 Business rules (markups, buffers, rounding, rate rules, sourcing rules, who is staff) live
@@ -116,5 +118,6 @@ customers, trade prices and credit: [docs/business.md](docs/business.md). Quotes
 pages: [docs/procurement.md](docs/procurement.md). Shipments, landed
 cost, stock and deliveries: [docs/logistics.md](docs/logistics.md). The
 customer portal, invoices, statements, returns and saved lists:
-[docs/portal.md](docs/portal.md). Choices
+[docs/portal.md](docs/portal.md). Serials, warranty, repairs and credit
+notes: [docs/aftersales.md](docs/aftersales.md). Choices
 made along the way: [docs/decisions.md](docs/decisions.md).

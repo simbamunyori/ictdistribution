@@ -8,6 +8,9 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { SiteFrame } from "@/components/site/site-frame";
 import { Alert } from "@/components/ui/alert";
 import { prisma } from "@/server/db";
+import { WARRANTY_STATE_LABEL, warrantyState } from "@/lib/warranty";
+import { formatDate } from "@/lib/zoned";
+import { UNIT_STATUS_LABEL } from "@/server/aftersales/units";
 import { orderLogistics } from "@/server/logistics/tracking";
 import { returnableLines } from "@/server/portal/returns";
 import { inScope, portalCan } from "@/server/portal/scope";
@@ -21,7 +24,13 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const seen = await viewableOrder(number, q.t ?? "");
   if (!seen) notFound();
   const { order } = seen;
-  const [logistics, invoice] = await Promise.all([orderLogistics(prisma, order.id), prisma.invoice.findUnique({ where: { orderId: order.id }, select: { number: true } })]);
+  const [logistics, invoice, units, credits] = await Promise.all([
+    orderLogistics(prisma, order.id),
+    prisma.invoice.findUnique({ where: { orderId: order.id }, select: { number: true } }),
+    prisma.unit.findMany({ where: { orderId: order.id, startsAt: { not: null } }, orderBy: [{ description: "asc" }, { serial: "asc" }], select: { id: true, serial: true, description: true, status: true, endsAt: true, warrantyMonths: true, startsAt: true } }),
+    prisma.creditNote.findMany({ where: { orderId: order.id }, orderBy: { issuedAt: "asc" }, select: { number: true } }),
+  ]);
+  const now = new Date();
   // Buying again, lists and returns are for the signed-in customer the order belongs to.
   const v = s.user ? { userId: s.user.id, organisationId: s.organisation?.id ?? null, role: s.organisation?.role ?? null } : null;
   const mine = v && inScope(v, order) && portalCan(v, "buy") ? v : null;
@@ -70,6 +79,37 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             links={{ note: (n) => `${base}/deliveries/${encodeURIComponent(n)}/note${t}`, pod: (n) => `${base}/deliveries/${encodeURIComponent(n)}/pod${t}`, commercialInvoice: sent && order.fulfilment === "DELIVERY" ? `${base}/commercial-invoice${t}` : undefined }}
           />
         </div>
+        {units.length ? (
+          <section aria-labelledby="serials" className="mt-8 rounded-lg border border-line bg-raised p-5">
+            <h2 id="serials" className="text-headline font-bold">
+              Serial numbers and warranty
+            </h2>
+            <ul className="mt-3 flex flex-col gap-1 text-callout">
+              {units.map((u) => {
+                const w = warrantyState(u, now);
+                return (
+                  <li key={u.id}>
+                    {u.description}: <span className="font-mono">{u.serial}</span>,{" "}
+                    <span className="text-ink-muted">{u.status !== "WITH_CUSTOMER" ? UNIT_STATUS_LABEL[u.status].toLowerCase() : w === "IN_WARRANTY" && u.endsAt ? `in warranty until ${formatDate(u.endsAt, order.market.locale, order.market.timeZone)}` : WARRANTY_STATE_LABEL[w].toLowerCase()}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
+        {credits.length && v && inScope(v, order) ? (
+          <p className="mt-6 text-callout">
+            Credit notes:{" "}
+            {credits.map((c, i) => (
+              <span key={c.number}>
+                {i ? ", " : ""}
+                <a href={`/credit-notes/${encodeURIComponent(c.number)}`} className="text-link underline underline-offset-4">
+                  {c.number}
+                </a>
+              </span>
+            ))}
+          </p>
+        ) : null}
         {mine ? (
           <section aria-labelledby="save-list" className="mt-8 rounded-lg border border-line bg-raised p-5">
             <h2 id="save-list" className="text-headline font-bold">

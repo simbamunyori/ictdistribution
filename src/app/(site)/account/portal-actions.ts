@@ -7,7 +7,7 @@ import { requestContext } from "@/server/auth/next";
 import { prisma } from "@/server/db";
 import { DomainError } from "@/server/errors";
 import { createList, deleteList, listToCart, renameList, reorder, saveCartAsList, saveOrderAsList, saveToList, setListLine, type ToCart } from "@/server/portal/lists";
-import { requestReturn, withdrawReturn } from "@/server/portal/returns";
+import { requestReturn, setInboundTracking, withdrawReturn } from "@/server/portal/returns";
 import { portalViewer } from "@/server/portal/viewer";
 import { runSoon } from "@/server/jobs/boss";
 import { redis } from "@/server/redis";
@@ -138,12 +138,13 @@ export async function requestReturnAction(_: ActionState, form: FormData): Promi
   const v = await portalViewer(`/account/returns/new?order=${encodeURIComponent(number)}`);
   const quantities: Record<string, string> = {};
   for (const [k, val] of form.entries()) if (k.startsWith("qty-") && typeof val === "string") quantities[k.slice(4)] = val;
-  const values = { reason: field(form, "reason"), details: field(form, "details"), ...Object.fromEntries(Object.entries(quantities).map(([k, val]) => [`qty-${k}`, val])) };
+  const units = form.getAll("unit").filter((u): u is string => typeof u === "string");
+  const values = { reason: field(form, "reason"), wants: field(form, "wants"), details: field(form, "details"), ...Object.fromEntries(Object.entries(quantities).map(([k, val]) => [`qty-${k}`, val])), ...Object.fromEntries(units.map((u) => [`unit-${u}`, "on"])) };
   let created: string | null = null;
   const result = await run(async () => {
     const { ipAddress } = await requestContext();
     await check(redis(), `return:${v.userId}`, LIMITS.returnsPerUser);
-    created = (await requestReturn(prisma, { key: appKey() }, v, number, { reason: values.reason, details: values.details, quantities }, ipAddress)).number;
+    created = (await requestReturn(prisma, { key: appKey() }, v, number, { reason: values.reason, wants: values.wants, details: values.details, quantities, units }, ipAddress)).number;
     await hit(redis(), `return:${v.userId}`, LIMITS.returnsPerUser);
   }, values);
   if (created) {
@@ -160,6 +161,18 @@ export async function withdrawReturnAction(_: ActionState, form: FormData): Prom
     await withdrawReturn(prisma, v, number, (await requestContext()).ipAddress);
     return "Withdrawn.";
   });
+  revalidatePath(`/account/returns/${encodeURIComponent(number)}`);
+  return result;
+}
+
+export async function returnTrackingAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const number = field(form, "number");
+  const v = await portalViewer(`/account/returns/${encodeURIComponent(number)}`);
+  const values = { carrier: field(form, "carrier"), reference: field(form, "reference") };
+  const result = await run(async () => {
+    await setInboundTracking(prisma, v, number, values, (await requestContext()).ipAddress);
+    return "Thank you. We look out for it.";
+  }, values);
   revalidatePath(`/account/returns/${encodeURIComponent(number)}`);
   return result;
 }

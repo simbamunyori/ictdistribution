@@ -4,9 +4,10 @@ import { signIn } from "./support/signed-in";
 
 /** The customer portal: a business's invoices, statement and payments, buying again, saved lists and returns. */
 test("a business sees its invoices, statement and payments, with their papers", async ({ page, context, baseURL, request }) => {
+  await records();
   await signIn(context, "customer", baseURL!);
   await page.goto("/account/invoices");
-  const row = page.getByRole("row", { name: /INV-TEST1/ });
+  const row = page.getByRole("row", { name: /^INV-TEST1/ });
   await expect(row).toContainText("ICT-TEST-3");
   await expect(row).toContainText("Overdue");
   const pdf = await page.request.get("/invoices/INV-TEST1");
@@ -66,6 +67,7 @@ test("a customer asks for a return and staff answer it", async ({ page, context,
   await expect(page.getByText("Choose why.")).toBeVisible();
   await page.locator('input[name^="qty-"]:not([disabled])').first().fill("1");
   await page.getByLabel("Why").selectOption("NOT_NEEDED");
+  await page.getByLabel("What would you like").selectOption("CREDIT");
   await page.getByLabel("What is wrong").fill("We ordered one too many.");
   await page.getByRole("button", { name: "Ask for the return" }).click();
   const heading = page.getByRole("heading", { name: /^Return RMA-\d+$/ });

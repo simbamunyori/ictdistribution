@@ -185,7 +185,7 @@ describe.skipIf(!hasDb)("customer portal", () => {
     const p = await product("Access point");
     const order = await orderFor(owner, [{ productId: p.id, quantity: 3 }]);
     const lineId = (await db.orderLine.findFirstOrThrow({ where: { orderId: order.id } })).id;
-    const input = (qty: string, reason = "NOT_NEEDED") => ({ reason, details: "Ordered one too many.", quantities: { [lineId]: qty } });
+    const input = (qty: string, reason = "NOT_NEEDED") => ({ reason, wants: "CREDIT", details: "Ordered one too many.", quantities: { [lineId]: qty }, units: [] });
     await expect(requestReturn(db, { key: KEY }, owner, order.number, input("1"))).rejects.toMatchObject({ fieldErrors: { [`qty-${lineId}`]: "Nothing of this line can be returned." } });
     await fulfilOrder(db, admin, { key: KEY }, order.id, "");
     await expect(requestReturn(db, { key: KEY }, as(await addMember(org.organisationId, "VIEWER")), order.number, input("1"))).rejects.toThrow(/Owner or a Buyer/);
@@ -205,12 +205,12 @@ describe.skipIf(!hasDb)("customer portal", () => {
     await withdrawReturn(db, owner, faulty.number);
     await expect(withdrawReturn(db, owner, faulty.number)).rejects.toThrow(/already answered/);
 
-    await expect(advanceReturn(db, await makeStaff("FINANCE"), { key: KEY }, r.id, "approve", "")).rejects.toThrow(/role/);
-    await expect(advanceReturn(db, admin, { key: KEY }, r.id, "receive", "")).rejects.toThrow(/can't be received/);
-    await advanceReturn(db, admin, { key: KEY }, r.id, "approve", "Drop them at our Gaborone West office.");
-    await advanceReturn(db, admin, { key: KEY }, r.id, "receive", "");
-    await expect(advanceReturn(db, admin, { key: KEY }, r.id, "close", "")).rejects.toMatchObject({ field: "note" });
-    await advanceReturn(db, admin, { key: KEY }, r.id, "close", "Refunded to your account.");
+    await expect(advanceReturn(db, await makeStaff("FINANCE"), { key: KEY }, r.id, "approve", { note: "" })).rejects.toThrow(/role/);
+    await expect(advanceReturn(db, admin, { key: KEY }, r.id, "receive", { note: "" })).rejects.toThrow(/can't be received/);
+    await advanceReturn(db, admin, { key: KEY }, r.id, "approve", { note: "Drop them at our Gaborone West office." });
+    await advanceReturn(db, admin, { key: KEY }, r.id, "receive", { note: "" });
+    await expect(advanceReturn(db, admin, { key: KEY }, r.id, "close", { note: "" })).rejects.toMatchObject({ field: "note" });
+    await advanceReturn(db, admin, { key: KEY }, r.id, "close", { note: "Refunded to your account." });
     const done = (await customerReturns(db, owner)).find((x) => x.id === r.id)!;
     expect(done).toMatchObject({ status: "CLOSED", note: "Refunded to your account.", decidedByLabel: admin.name });
     expect(await db.outboundEmail.count({ where: { kind: { in: ["return.approved", "return.received", "return.closed"] }, toAddress: (await db.user.findUniqueOrThrow({ where: { id: buyer.userId } })).email } })).toBe(3);

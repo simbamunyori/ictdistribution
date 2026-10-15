@@ -199,7 +199,7 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
 - **One tax invoice per order, issued when it is sent or ready to
   collect**, as the pro forma already promised. It charges the order's
   total; payments recorded against the order settle it. Credit notes,
-  for cancellations and returns after an invoice, come with finance in D10.
+  for returns after an invoice, came with after-sales in D9.
 - **Our tax number is set per market** by an Admin, beside the tax rate,
   and printed on tax invoices. It is empty until the business says which
   legal entity trades where.
@@ -222,3 +222,30 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
 - **Buying again uses today's prices.** A past order or a list goes into
   the cart priced afresh; anything no longer sold, or priced only on a
   quote, is left out and named.
+
+## D9
+
+- **A serial-numbered item sold is a unit**, with its warranty worked out
+  from the product's warranty months when it was sold, from the day it
+  left us. Items without serials keep the warranty shown on the product.
+- **Serials come from the supplier's shipping notice or are typed by
+  staff** on the order. Staff serials win when both name the same one;
+  a unit in a return is never removed by editing the list.
+- **A replacement carries on the original's warranty** rather than
+  starting a new one, the usual maker's rule. Staff can say otherwise in
+  the note.
+- **A credit note credits the returned lines at the prices charged**,
+  with the tax worked out as the invoice did. Delivery charges and part
+  credits are not credited by this; settle those another way and say so
+  in the note.
+- **Credit notes and refunds count everywhere money owed does**: the
+  invoice, the statement (credit notes as credits, refunds as charges),
+  ageing, the credit position and whether the order is paid.
+- **Only Finance and Admins issue credit notes and record refunds.** The
+  rest of a return stays with Sales, Logistics and Support.
+- **The repairer's reference stays internal**, like every supplier
+  detail.
+- **Returned items are not put back into stock automatically.** Staff
+  count anything that can be sold again into stock on the Stock page, as
+  in D8.
+

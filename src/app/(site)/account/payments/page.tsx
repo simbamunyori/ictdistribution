@@ -4,7 +4,7 @@ import { Card, PageHeader, TableWrap, td, th } from "@/components/ui/card";
 import { formatMoney } from "@/lib/money";
 import { formatDate } from "@/lib/zoned";
 import { prisma } from "@/server/db";
-import { awaitingPayment, customerPayments } from "@/server/portal/accounts";
+import { awaitingPayment, customerPayments, customerRefunds } from "@/server/portal/accounts";
 import { customerInvoices } from "@/server/portal/invoices";
 import { portalCan } from "@/server/portal/scope";
 import { portalViewer } from "@/server/portal/viewer";
@@ -24,7 +24,7 @@ export default async function PaymentsPage() {
       </>
     );
   }
-  const [payments, invoices, waiting] = await Promise.all([customerPayments(prisma, v), customerInvoices(prisma, v, new Date(), { open: true }), awaitingPayment(prisma, v)]);
+  const [payments, invoices, waiting, refunds] = await Promise.all([customerPayments(prisma, v), customerInvoices(prisma, v, new Date(), { open: true }), awaitingPayment(prisma, v), customerRefunds(prisma, v)]);
   const toPay = [
     ...waiting.map((o) => ({ key: o.id, what: `Order ${o.number}`, note: "Pro forma: we start once it is paid", reference: o.number, by: o.payBy, owed: o.totalMinor - o.payments.reduce((s, p) => s + p.amountMinor, 0n), currency: o.currency, market: o.market, href: `/orders/${encodeURIComponent(o.number)}/pro-forma` })),
     ...invoices.map((i) => ({ key: i.id, what: `Invoice ${i.number}`, note: i.state === "OVERDUE" ? "Overdue" : "Tax invoice", reference: i.order.number, by: i.dueAt, owed: i.outstanding, currency: i.currency, market: i.order.market, href: `/invoices/${encodeURIComponent(i.number)}` })),
@@ -94,6 +94,38 @@ export default async function PaymentsPage() {
             <p className="mt-2">No payments yet.</p>
           )}
         </Card>
+        {refunds.length ? (
+          <Card>
+            <h2 className="text-headline font-bold">Paid back to you</h2>
+            <TableWrap label="Refunds">
+              <table className="mt-3 w-full min-w-[30rem] text-callout">
+                <thead>
+                  <tr>
+                    <th className={th}>Paid</th>
+                    <th className={th}>For</th>
+                    <th className={th}>Reference</th>
+                    <th className={`${th} text-right`}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {refunds.map((r) => (
+                    <tr key={r.id}>
+                      <td className={td}>{formatDate(r.paidOn, r.order.market.locale, r.order.market.timeZone)}</td>
+                      <td className={td}>
+                        <Link href={`/orders/${encodeURIComponent(r.order.number)}`} className="text-link underline underline-offset-4">
+                          {r.order.number}
+                        </Link>
+                        {r.creditNote ? <span className="block text-caption text-ink-muted">Credit note {r.creditNote.number}</span> : null}
+                      </td>
+                      <td className={td}>{r.reference}</td>
+                      <td className={`${td} text-right tabular-nums`}>{formatMoney({ amountMinor: r.amountMinor, currency: r.order.currency }, r.order.market.locale)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableWrap>
+          </Card>
+        ) : null}
       </div>
     </>
   );

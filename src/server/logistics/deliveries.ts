@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { audit, staffAudit } from "@/server/audit";
 import { queueEmail } from "@/server/email/outbox";
 import { DomainError } from "@/server/errors";
+import { syncUnits } from "@/server/aftersales/units";
 import { issueInvoice } from "@/server/portal/invoices";
 import { orderEmailPayload, TO_SEND, type OrderDeps } from "@/server/shop/orders";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
@@ -117,6 +118,10 @@ export async function dispatchDelivery(db: PrismaClient, actor: StaffActor, deps
     if (everything && TO_SEND.includes(o.status)) {
       await tx.order.update({ where: { id: o.id }, data: { status: "FULFILLED", fulfilledAt: now } });
       await issueInvoice(tx, deps.key, o.id, now);
+    }
+    // Serial-numbered items in it start their warranty today.
+    await syncUnits(tx, o.id);
+    if (everything && TO_SEND.includes(o.status)) {
       await queueEmail(tx, deps.key, { to: o.email, kind: o.fulfilment === "COLLECTION" ? "order.ready" : "order.sent", payload: { ...orderEmailPayload(o, o.market), note: o.fulfilment === "DELIVERY" && note ? `It is with ${note}.` : "" } });
     }
     await audit(tx, staffAudit(actor, { action: "delivery.dispatched", summary: `Dispatched delivery ${d.number} for order ${o.number}${note ? ` with ${note}` : ""}${everything ? "; the whole order has now left" : ""}`, organisationId: o.organisationId, subjectUserId: o.userId, targetType: "Order", targetId: o.id, ipAddress: ip, visibleToCustomer: Boolean(o.userId || o.organisationId) }));

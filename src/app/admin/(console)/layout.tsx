@@ -47,6 +47,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     { href: "/admin", label: "Overview" },
     ...(canOrders ? [{ href: "/admin/orders", label: "Orders", badge: waiting ? waiting.payment + waiting.toSend || undefined : undefined }] : []),
     ...(canOrders ? [{ href: "/admin/returns", label: "Returns", badge: returns || undefined }] : []),
+    ...(canOrders ? [{ href: "/admin/warranty", label: "Warranty" }] : []),
     ...(canQuotes ? [{ href: "/admin/quotes", label: "Quotes", badge: quotes ? quotes.review + quotes.byHand || undefined : undefined }] : []),
     ...(canPurchaseOrders ? [{ href: "/admin/purchase-orders", label: "Purchase orders", badge: pos ? pos.approve + pos.byHand || undefined : undefined }] : []),
     ...(canLogistics
