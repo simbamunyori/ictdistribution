@@ -79,7 +79,7 @@ export function CheckboxField({ id, label, hint, className, ...props }: Omit<Bas
   const noteId = hint ? `${id}-note` : undefined;
   return (
     <div className={cn("flex items-start gap-3", className)}>
-      <input id={id} name={props.name ?? id} type="checkbox" aria-describedby={noteId} className="mt-1 size-4 shrink-0 accent-[var(--t-primary)]" {...props} />
+      <input id={id} name={props.name ?? id} type="checkbox" aria-describedby={noteId} className="mt-1 size-4 shrink-0 accent-[var(--t-accent)]" {...props} />
       <div>
         <label htmlFor={id} className="text-body font-semibold text-ink">
           {label}

@@ -27,3 +27,6 @@ npm-debug.log*
 # server commands bundle and local backups
 ops.cjs
 /backups/
+
+# Claude Code worktrees
+/.claude/worktrees/

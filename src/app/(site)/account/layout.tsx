@@ -10,7 +10,7 @@ export default async function AccountLayout({ children }: { children: React.Reac
   const actor = await actorFor(prisma, session);
   return (
     <SiteFrame back="/account">
-      <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] gap-8 px-4 py-8 md:grid-cols-[13rem_minmax(0,1fr)] md:px-6 md:py-12">
+      <div className="mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)] gap-8 px-4 py-8 md:grid-cols-[13rem_minmax(0,1fr)] md:px-6 md:py-12">
         <AccountNav organisation={Boolean(actor)} accounts={portalCan({ role: actor?.role ?? null }, "accounts")} />
         <div className="min-w-0">{children}</div>
       </div>

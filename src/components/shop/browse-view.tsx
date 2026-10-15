@@ -62,7 +62,7 @@ export function BrowseView({ path, search, result, compare, where, categoryLinks
           <div className="flex flex-col gap-1.5">
             {result.brands.map((b) => (
               <label key={b.value} className="flex items-center gap-2 text-callout">
-                <input type="checkbox" name="b" value={b.value} defaultChecked={b.chosen} className="size-4 accent-[var(--t-primary)]" />
+                <input type="checkbox" name="b" value={b.value} defaultChecked={b.chosen} className="size-4 accent-[var(--t-accent)]" />
                 {b.label} <span className="text-ink-muted">({b.count})</span>
               </label>
             ))}
@@ -93,7 +93,7 @@ export function BrowseView({ path, search, result, compare, where, categoryLinks
             <div className="flex flex-col gap-1.5">
               {f.options.map((o) => (
                 <label key={o.value} className={cn("flex items-center gap-2 text-callout", !o.count && !o.chosen && "text-ink-muted")}>
-                  <input type="checkbox" name={`f.${f.field.key}`} value={o.value} defaultChecked={o.chosen} className="size-4 accent-[var(--t-primary)]" />
+                  <input type="checkbox" name={`f.${f.field.key}`} value={o.value} defaultChecked={o.chosen} className="size-4 accent-[var(--t-accent)]" />
                   {o.label} <span className="text-ink-muted">({o.count})</span>
                 </label>
               ))}
@@ -148,7 +148,7 @@ export function BrowseView({ path, search, result, compare, where, categoryLinks
       </aside>
 
       <section aria-labelledby="results" className="min-w-0">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-4 flex flex-col gap-3 rounded-lg border border-line bg-raised px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 id="results" className="text-headline font-bold">
             {result.total} {result.total === 1 ? "product" : "products"}
             {result.terms.length ? ` for “${q}”` : ""}
@@ -156,7 +156,7 @@ export function BrowseView({ path, search, result, compare, where, categoryLinks
           <nav aria-label="Sort" className="flex flex-wrap items-center gap-1 text-callout">
             <span className="mr-1 text-ink-muted">Sort by</span>
             {sorts.map((s) => (
-              <Link key={s.value} href={hrefWith(path, search, { sort: s.value, page: null })} aria-current={result.sort === s.value ? "true" : undefined} className="rounded-md px-2 py-1 hover:bg-surface aria-[current]:bg-surface aria-[current]:font-semibold">
+              <Link key={s.value} href={hrefWith(path, search, { sort: s.value, page: null })} aria-current={result.sort === s.value ? "true" : undefined} className="rounded-md px-2 py-1 hover:bg-surface aria-[current]:bg-highlight-soft aria-[current]:font-semibold aria-[current]:text-ink">
                 {s.label}
               </Link>
             ))}
@@ -181,7 +181,7 @@ export function BrowseView({ path, search, result, compare, where, categoryLinks
           </ul>
         ) : null}
         {result.items.length ? (
-          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <ul className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
             {result.items.map((p) => (
               <li key={p.id} className="flex">
                 <ProductCard product={p} comparing={compare.includes(p.id)} back={back} where={where} />
@@ -205,7 +205,7 @@ export function BrowseView({ path, search, result, compare, where, categoryLinks
                 <h2 id="close-matches" className="mb-3 text-headline font-bold">
                   Close matches
                 </h2>
-                <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <ul className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
                   {close.map((p) => (
                     <li key={p.id} className="flex">
                       <ProductCard product={p} comparing={compare.includes(p.id)} back={back} where={where} />

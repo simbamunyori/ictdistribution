@@ -8,7 +8,7 @@ export const company = {
   name: "ICT Distribution Africa",
   shortName: "ICTD",
   domain: "ictdistribution.africa",
-  tagline: "ICT products for Africa, at the right price, delivered.",
+  tagline: "The right technology, sourced and delivered.",
   /** Who builds and hosts the platform. Named only in the footer. */
   builtBy: "Fourth Generation Technologies",
   /** How the admin area writes amounts and dates for staff. */

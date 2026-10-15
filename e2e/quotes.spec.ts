@@ -22,7 +22,7 @@ for (const width of [390, 1280]) {
     await signIn(context, "customer", baseURL!);
 
     await page.goto("/account/quotes");
-    await page.getByRole("link", { name: "Ask for a quote" }).click();
+    await page.getByRole("main").getByRole("link", { name: "Ask for a quote" }).click();
     await expect(page).toHaveURL(/\/account\/quotes\/new/);
     await page.getByLabel("Reseller project").check();
     await page.getByLabel("What do you need?").fill("2 x DEMO-KVR56S46BS8-16");

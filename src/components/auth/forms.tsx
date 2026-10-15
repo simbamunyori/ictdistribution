@@ -90,7 +90,7 @@ export function SignUpForm({
           { value: "business", label: "A business or organisation", hint: "Trade prices once we have verified it, quotes and a team account." },
         ].map((o) => (
           <label key={o.value} className="flex cursor-pointer items-start gap-3 rounded-md border border-line p-3 has-[:checked]:border-brand has-[:checked]:bg-brand-soft">
-            <input type="radio" name="accountType" value={o.value} checked={accountType === o.value} onChange={() => setAccountType(o.value)} className="mt-1 accent-[var(--t-primary)]" />
+            <input type="radio" name="accountType" value={o.value} checked={accountType === o.value} onChange={() => setAccountType(o.value)} className="mt-1 accent-[var(--t-accent)]" />
             <span>
               <span className="block font-semibold text-ink">{o.label}</span>
               <span className="block text-callout text-ink-muted">{o.hint}</span>

@@ -23,7 +23,7 @@ export default async function Compare({ searchParams }: { searchParams: Promise<
   const shown = onlyDiff ? rows.filter((r) => r.differs) : rows;
   return (
     <SiteFrame back="/compare">
-      <div className="mx-auto max-w-6xl px-4 py-10 md:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-10 md:px-6">
         <h1 className="text-title font-bold">Compare products</h1>
         {products.length ? (
           <>

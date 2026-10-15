@@ -10,7 +10,7 @@ export function PriceTag({ price, locale, timeZone, taxName, size = "md", showSp
   return (
     <div className="flex flex-col gap-1">
       <p className="flex flex-wrap items-baseline gap-x-2">
-        <span className={cn("font-bold text-ink tabular-nums", size === "lg" ? "text-title" : "text-headline")}>{formatMoney(price.amount, locale)}</span>
+        <span className={cn("font-bold tracking-tight text-ink tabular-nums", size === "lg" ? "text-[2rem] leading-tight" : "text-[1.3125rem] leading-tight")}>{formatMoney(price.amount, locale)}</span>
         {price.was ? (
           <span className="text-callout text-ink-muted line-through tabular-nums">
             <span className="sr-only">Usual price </span>
@@ -28,7 +28,7 @@ export function PriceTag({ price, locale, timeZone, taxName, size = "md", showSp
 export function SpecialLine({ special, locale, timeZone }: { special: { name: string; endsAt: Date; remaining: number | null }; locale: string; timeZone: string }) {
   return (
     <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption font-semibold">
-      <span className="inline-flex items-center gap-1 text-link">
+      <span className="inline-flex items-center gap-1 text-highlight-ink">
         <Tag aria-hidden className="size-3.5" />
         {special.name}
       </span>

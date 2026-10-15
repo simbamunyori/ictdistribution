@@ -35,7 +35,7 @@ const CARD_SELECT = {
   leadTimeDays: true,
   categoryId: true,
   brand: { select: { name: true, slug: true } },
-  category: { select: { id: true, name: true, slug: true, parentId: true, specFields: { where: { highlight: true }, orderBy: { sortOrder: "asc" } }, parent: { select: { specFields: { where: { highlight: true }, orderBy: { sortOrder: "asc" } } } } } },
+  category: { select: { id: true, name: true, slug: true, parentId: true, specFields: { where: { highlight: true }, orderBy: { sortOrder: "asc" } }, parent: { select: { slug: true, specFields: { where: { highlight: true }, orderBy: { sortOrder: "asc" } } } } } },
   media: { where: { kind: "IMAGE" }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], take: 1, select: { id: true, alt: true, width: true, height: true } },
 } satisfies Prisma.ProductSelect;
 
@@ -49,6 +49,8 @@ export interface ProductCard {
   mpn: string;
   summary: string;
   category: string;
+  /** The top-level category's slug, for the picture shown when there is no photo. */
+  categorySlug: string;
   sellToIndividuals: boolean;
   image: { id: string; alt: string; width: number | null; height: number | null } | null;
   /** The category's highlighted specifications, written out: "16 GB", "Intel Core i7". */
@@ -74,6 +76,7 @@ function toCard(p: CardRow, ctx?: PriceContext): ProductCard {
     mpn: p.mpn,
     summary: p.summary,
     category: p.category.name,
+    categorySlug: p.category.parent?.slug ?? p.category.slug,
     sellToIndividuals: p.sellToIndividuals,
     image: p.media[0] ?? null,
     highlights: fields.map((f) => formatSpec(f, specs[f.key])).filter(Boolean).slice(0, 4),
@@ -355,7 +358,7 @@ async function suggestions(db: Pick<PrismaClient, "product" | "categorySuggestio
   const mine = new Map(fields.map((f) => [f.key, specs[f.key]]));
   const candidates = await db.product.findMany({
     where: { AND: [IN_SHOP, { id: { notIn: [...exclude] } }, { OR: [{ categoryId: { in: related } }, { category: { parentId: { in: related } } }] }] },
-    select: { ...CARD_SELECT, category: { select: { ...CARD_SELECT.category.select, specFields: { orderBy: { sortOrder: "asc" } }, parent: { select: { specFields: { orderBy: { sortOrder: "asc" } } } } } } },
+    select: { ...CARD_SELECT, category: { select: { ...CARD_SELECT.category.select, specFields: { orderBy: { sortOrder: "asc" } }, parent: { select: { slug: true, specFields: { orderBy: { sortOrder: "asc" } } } } } } },
     orderBy: { createdAt: "desc" },
     take: 200,
   });
@@ -375,7 +378,7 @@ async function suggestions(db: Pick<PrismaClient, "product" | "categorySuggestio
     picked.push(s);
   }
   for (const s of scored) if (!picked.includes(s) && picked.length < 4) picked.push(s);
-  return picked.map((s) => toCard({ ...s.c, category: { ...s.c.category, specFields: s.c.category.specFields.filter((f) => f.highlight), parent: s.c.category.parent ? { specFields: s.c.category.parent.specFields.filter((f) => f.highlight) } : null } }, ctx));
+  return picked.map((s) => toCard({ ...s.c, category: { ...s.c.category, specFields: s.c.category.specFields.filter((f) => f.highlight), parent: s.c.category.parent ? { slug: s.c.category.parent.slug, specFields: s.c.category.parent.specFields.filter((f) => f.highlight) } : null } }, ctx));
 }
 
 // ─── Compare ─────────────────────────────────────────────────────────
@@ -387,7 +390,7 @@ export async function compareProducts(db: Pick<PrismaClient, "product">, ids: st
     select: {
       ...CARD_SELECT,
       warrantyMonths: true,
-      category: { select: { id: true, name: true, slug: true, parentId: true, specFields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] }, parent: { select: { specFields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] } } } } },
+      category: { select: { id: true, name: true, slug: true, parentId: true, specFields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] }, parent: { select: { slug: true, specFields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] } } } } },
     },
   });
   const products = ids.map((id) => rows.find((r) => r.id === id)).filter((r) => r !== undefined);
@@ -399,7 +402,7 @@ export async function compareProducts(db: Pick<PrismaClient, "product">, ids: st
       return { key: f.key, label: f.label, values, differs: new Set(values).size > 1 };
     })
     .filter((r) => r.values.some(Boolean));
-  const highlightOnly = (p: (typeof products)[number]): CardRow => ({ ...p, category: { ...p.category, specFields: p.category.specFields.filter((f) => f.highlight), parent: p.category.parent ? { specFields: p.category.parent.specFields.filter((f) => f.highlight) } : null } });
+  const highlightOnly = (p: (typeof products)[number]): CardRow => ({ ...p, category: { ...p.category, specFields: p.category.specFields.filter((f) => f.highlight), parent: p.category.parent ? { slug: p.category.parent.slug, specFields: p.category.parent.specFields.filter((f) => f.highlight) } : null } });
   return {
     products: products.map((p) => ({ ...toCard(highlightOnly(p), ctx), warrantyMonths: p.warrantyMonths })),
     rows: [

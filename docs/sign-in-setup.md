@@ -63,7 +63,7 @@ project for ICT Distribution:
 
 1. **APIs & Services > OAuth consent screen**: External, app name
    `ICT Distribution Africa`, support email, logo from
-   `brand/png/ictd-mark-512.png`, authorised domain
+   `brand/png/app-icon-512.png`, authorised domain
    `ictdistribution.africa`. Scopes: `openid`, `email`, `profile`.
    **Publish app**.
 2. **APIs & Services > Credentials > Create credentials > OAuth client

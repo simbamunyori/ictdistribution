@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Alert } from "@/components/ui/alert";
-import { Card, PageHeader } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/card";
 import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
 import { env } from "@/server/env";
@@ -68,10 +68,6 @@ export default async function AdminHome() {
           </Link>
         ))}
       </div>
-      <Card className="mt-6">
-        <h2 className="text-headline font-bold">Coming in the next milestones</h2>
-        <p className="mt-1 text-ink-muted">The shop and checkout, specials, quotes, orders and delivery each get their own pages here as they are built.</p>
-      </Card>
     </>
   );
 }

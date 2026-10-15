@@ -32,7 +32,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const links = (top?.children ?? []).filter((s) => s.count).map((s) => ({ href: `/categories/${s.slug}`, label: s.name, count: s.count }));
   return (
     <SiteFrame back={`/categories/${slug}`}>
-      <div className="mx-auto max-w-6xl px-4 py-10 md:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-10 md:px-6">
         <nav aria-label="Breadcrumb" className="mb-2 text-callout">
           <ol className="flex flex-wrap gap-1 text-ink-muted">
             <li>

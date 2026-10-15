@@ -52,7 +52,7 @@ export default async function Customers({ searchParams }: { searchParams: Promis
           </select>
         </label>
         <label className="flex items-center gap-2 sm:h-11">
-          <input type="checkbox" name="check" value="waiting" defaultChecked={waiting} className="size-4 accent-[var(--t-primary)]" />
+          <input type="checkbox" name="check" value="waiting" defaultChecked={waiting} className="size-4 accent-[var(--t-accent)]" />
           <span className="text-callout font-semibold">Waiting to be checked</span>
         </label>
         <button type="submit" className="h-11 rounded-md border border-line bg-raised px-4 font-semibold hover:bg-surface">
