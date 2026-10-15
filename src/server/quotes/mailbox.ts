@@ -2,7 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { rfqReferenceIn } from "@/lib/quote-reading";
 import type { QuoteDeps } from "./common";
 import { requestQuoteByEmail, type QuoteFile } from "./intake";
-import { applyEmailReply } from "./suppliers";
+import { applyEmailReply, replyFileType, type ReplyFile } from "./suppliers";
 
 /**
  * The quotes mailbox (QUOTES_EMAIL, read over IMAP_URL). A reply that
@@ -20,7 +20,8 @@ export interface InboundMail {
   date: Date;
   /** An automatic reply or a bounce: never a request. */
   automatic: boolean;
-  attachments: QuoteFile[];
+  /** With the type the sender gave, when known. */
+  attachments: (QuoteFile & { type?: string })[];
 }
 
 /** Requests one address may email in a day. More are kept but not read, so a loop can't flood the queue. */
@@ -56,7 +57,12 @@ async function handle(db: PrismaClient, deps: MailDeps, mail: InboundMail): Prom
 
   const reference = rfqReferenceIn(mail.subject);
   if (reference) {
-    const result = await applyEmailReply(db, deps, reference, from, mail.text);
+    // Their own quote may come as a PDF, a spreadsheet or a photo rather than in the text.
+    const files = mail.attachments.flatMap((a): ReplyFile[] => {
+      const mediaType = replyFileType(a.name, a.type ?? "", a.bytes);
+      return mediaType ? [{ name: a.name, mediaType, bytes: a.bytes }] : [];
+    });
+    const result = await applyEmailReply(db, deps, reference, from, mail.text, files);
     if (result.requestId) return { outcome: "supplier-reply", requestId: result.requestId, note: result.read ? "Prices read." : "Kept for staff to enter." };
   }
 
@@ -96,7 +102,7 @@ export async function pollMailbox(db: PrismaClient, deps: MailDeps, imapUrl: str
             text: parsed.text ?? "",
             date: parsed.date ?? new Date(),
             automatic: auto !== "no" || Boolean(parsed.headers.get("x-autoreply")),
-            attachments: parsed.attachments.filter((a) => a.filename && a.size <= 10 * 1024 * 1024).map((a) => ({ name: a.filename!, bytes: new Uint8Array(a.content) })),
+            attachments: parsed.attachments.filter((a) => a.filename && a.size <= 10 * 1024 * 1024).map((a) => ({ name: a.filename!, type: a.contentType, bytes: new Uint8Array(a.content) })),
           });
           handled.push(String(uid));
         } catch (e) {

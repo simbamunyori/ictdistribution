@@ -9,6 +9,7 @@ import { requestPrices, sendQuote } from "@/server/quotes/pricing";
 import { addLine, cancelQuote, removeLine, repriceQuote, setIncludeDocuments, updateLine, updateQuoteRules, type LineInput } from "@/server/quotes/staff";
 import { answerFromForm, enterSupplierPrices, markSentByHand } from "@/server/quotes/suppliers";
 import { appKey } from "@/server/secrets";
+import { whatsappConfig } from "@/server/whatsapp/cloud";
 import { staff } from "./staff-actor";
 
 /**
@@ -17,14 +18,14 @@ import { staff } from "./staff-actor";
  * service checks the role and writes the audit row.
  */
 
-const deps = () => ({ key: appKey(), replyTo: env().QUOTES_EMAIL });
+const deps = () => ({ key: appKey(), replyTo: env().QUOTES_EMAIL, whatsapp: whatsappConfig() !== null });
 const LINE_FIELDS = ["description", "quantity", "reference", "categoryId", "cost", "leadTimeDays", "price"] as const;
 const lineInput = (form: FormData) => Object.fromEntries(LINE_FIELDS.map((k) => [k, field(form, k)])) as unknown as LineInput;
 const done = (quoteId: string) => {
   revalidatePath(`/admin/quotes/${quoteId}`);
   revalidatePath("/admin/quotes");
 };
-const deliver = () => runSoon("email-deliver").catch(() => undefined);
+const deliver = () => Promise.all([runSoon("email-deliver"), runSoon("whatsapp")]).catch(() => undefined);
 
 export async function updateLineAction(_: ActionState, form: FormData): Promise<ActionState> {
   const { actor, ip } = await staff();
@@ -111,8 +112,8 @@ const RULE_FIELDS = ["maxAutoValue", "minMarginPercent", "minMatchConfidence", "
 
 export async function updateQuoteRulesAction(_: ActionState, form: FormData): Promise<ActionState> {
   const { actor, ip } = await staff();
-  const values = { ...Object.fromEntries(RULE_FIELDS.map((k) => [k, field(form, k)])), automationEnabled: form.get("automationEnabled") === "on" ? "on" : "" } as Record<string, string>;
-  const result = await run(() => updateQuoteRules(prisma, actor, { ...(values as Record<(typeof RULE_FIELDS)[number], string>), automationEnabled: values.automationEnabled === "on" }, ip).then(() => "Saved. New quotes follow these rules."), values);
+  const values = { ...Object.fromEntries(RULE_FIELDS.map((k) => [k, field(form, k)])), automationEnabled: form.get("automationEnabled") === "on" ? "on" : "", whatsappRequests: form.get("whatsappRequests") === "on" ? "on" : "" } as Record<string, string>;
+  const result = await run(() => updateQuoteRules(prisma, actor, { ...(values as Record<(typeof RULE_FIELDS)[number], string>), automationEnabled: values.automationEnabled === "on", whatsappRequests: values.whatsappRequests === "on" }, ip).then(() => "Saved. New quotes follow these rules."), values);
   revalidatePath("/admin/quotes/rules");
   return result;
 }

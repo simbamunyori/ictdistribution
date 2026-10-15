@@ -132,9 +132,24 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
   without an account always waits for a check, and each address can send
   10 requests a day, so the mailbox can't be used to send our prices to
   anyone who asks.
-- **WhatsApp requests to suppliers are sent by hand for now.** Staff get
-  the message and link ready to send; the messaging hub sends them in a
-  later milestone.
+- **WhatsApp requests to suppliers go through the WhatsApp Business
+  Cloud API** once it is connected (docs/quotes.md, "WhatsApp"). A
+  supplier with both an email address and a WhatsApp number gets the
+  same request, with one reference and one link, on both: suppliers here
+  often answer on WhatsApp first, and whichever answer comes first
+  counts. The Admin can turn WhatsApp requests off in the quote rules.
+  Until it is connected, or when a message can't be delivered, staff get
+  the message and link ready to send by hand as before. The first message
+  is an approved template, because WhatsApp only allows free text within
+  24 hours of the supplier writing to us.
+- **Only a supplier's own numbers set prices on WhatsApp.** The sender's
+  number must be the supplier's WhatsApp or phone number, or one of its
+  contacts'. Webhook calls are checked against the app secret. Anything
+  else is kept for staff, as with email.
+- **A delivery charge the supplier quotes replaces our freight
+  estimate** for that line. Insurance, duty and clearing are still
+  estimated from our shipments, or the supplier's landed cost allowance
+  is added when they can't be.
 - **Quote numbers** run from Q-100001 on their own sequence, separate
   from order numbers.
 

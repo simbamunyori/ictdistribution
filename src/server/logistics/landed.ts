@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient, ShipMode } from "@prisma/client";
 import { applyOverride, boxCm3, chargeableGrams, daysBetween, dutyFor, estimateRoute, kgPerM3, landedParts, type DutyRuleForChoice, type LandedParts, type RouteEstimate, type ShipmentSample } from "@/lib/freight";
-import { toBase } from "@/lib/pricing";
+import { applyBps } from "@/lib/money";
+import { toBase, type Rate } from "@/lib/pricing";
 import type { LandedAdd, OfferForChoice } from "@/lib/sourcing";
 import { asRate, currentRates, pricingSettings } from "@/server/pricing/rates";
 
@@ -105,4 +106,24 @@ export function unitLanded(ctx: LandedContext, product: ProductForLanded, suppli
 /** For chooseOffer: what each offer adds to land one unit of this product. */
 export function landedAdder<O extends OfferForChoice>(ctx: LandedContext, product: ProductForLanded): LandedAdd<O> {
   return (offer, costBase) => unitLanded(ctx, product, offer.supplier as SupplierRoute, costBase)?.total ?? null;
+}
+
+/**
+ * For chooseOffer, when an offer may carry the supplier's own delivery
+ * charge per unit (a supplier's answer to a request for price). Their
+ * charge takes the place of our freight estimate, and insurance, duty and
+ * clearing are still estimated from our shipments. Where those can't be
+ * estimated (no product, weight or route), the supplier's landed cost
+ * allowance is added on top of their charge. Offers without a charge of
+ * their own land as landedAdder says.
+ */
+export function quotedLandedAdder<O extends OfferForChoice & { freightMinor?: bigint | null }>(ctx: LandedContext, product: ProductForLanded | null, rate: (currency: string) => Rate | null): LandedAdd<O> {
+  return (offer, costBase) => {
+    const estimate = product ? unitLanded(ctx, product, offer.supplier as SupplierRoute, costBase) : null;
+    if (offer.freightMinor === null || offer.freightMinor === undefined) return estimate?.total ?? null;
+    const r = offer.currency === ctx.base ? null : rate(offer.currency);
+    if (offer.currency !== ctx.base && !r) return estimate?.total ?? null;
+    const theirs = toBase({ amountMinor: offer.freightMinor, currency: offer.currency }, ctx.base, r).amountMinor;
+    return estimate ? estimate.total - estimate.freight + theirs : theirs + applyBps(costBase, offer.supplier.landedCostBps);
+  };
 }

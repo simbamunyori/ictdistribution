@@ -58,7 +58,9 @@ Only an Admin changes the rules.
   page and a link to the PDF. Replies go to `QUOTES_EMAIL`.
 - **WhatsApp**: suppliers with only a WhatsApp number appear with **Open in
   WhatsApp** (the message and link ready to send). Staff send it, then
-  **Mark as sent**.
+  **Mark as sent**. Requests for price go on WhatsApp by themselves once
+  it is connected ([quotes.md](quotes.md)); purchase orders are still
+  sent by hand.
 
 The purchase order and its PDF show what we buy, the supplier's price,
 **Deliver to** (the default warehouse's address, else the one in the rules)

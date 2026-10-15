@@ -1,3 +1,4 @@
+import { parseMoney, toPlainAmount } from "./money";
 import type { Table } from "./price-list";
 
 /**
@@ -158,4 +159,39 @@ export function searchWords(description: string): string[] {
 export function rfqReferenceIn(subject: string): string | null {
   const m = /\bRFQ-([A-Z0-9]{6})\b/i.exec(subject);
   return m ? `RFQ-${m[1].toUpperCase()}` : null;
+}
+
+/**
+ * One delivery or freight charge for a whole supplier reply, spread over
+ * the lines they priced that have no delivery cost of their own, in
+ * proportion to each line's value, as an amount per unit (rounded up, so
+ * the whole charge is always covered). Amounts are decimal text in the
+ * reply's currency; lines whose price can't be read are left as they are.
+ */
+export function spreadShipping<L extends { ref: string; noOffer: boolean; unitPrice: string | null; shipping?: string | null }>(lines: L[], quantities: Map<string, number>, total: string | null, currency: string): L[] {
+  if (!total) return lines;
+  let charge: bigint;
+  try {
+    charge = parseMoney(total, currency);
+  } catch {
+    return lines;
+  }
+  if (charge <= 0n) return lines;
+  const value = (l: L) => {
+    if (l.noOffer || !l.unitPrice || l.shipping) return 0n;
+    try {
+      return parseMoney(l.unitPrice, currency) * BigInt(quantities.get(l.ref) ?? 0);
+    } catch {
+      return 0n;
+    }
+  };
+  const values = lines.map(value);
+  const sum = values.reduce((a, b) => a + b, 0n);
+  if (sum <= 0n) return lines;
+  return lines.map((l, i) => {
+    const qty = BigInt(quantities.get(l.ref) ?? 0);
+    if (!values[i] || !qty) return l;
+    const share = (charge * values[i] + sum - 1n) / sum;
+    return { ...l, shipping: toPlainAmount({ amountMinor: (share + qty - 1n) / qty, currency }) };
+  });
 }

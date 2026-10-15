@@ -15,7 +15,13 @@ export type SecretName =
   | "MICROSOFT_CLIENT_SECRET"
   | "GOOGLE_CLIENT_SECRET"
   /** Claude reads requests for quote and supplier replies (docs/quotes.md). Unset: rules read them. */
-  | "ANTHROPIC_API_KEY";
+  | "ANTHROPIC_API_KEY"
+  /** WhatsApp Business Cloud API (docs/quotes.md, "WhatsApp"): the system user's token, */
+  | "WHATSAPP_TOKEN"
+  /** the app secret that signs webhook calls, */
+  | "WHATSAPP_APP_SECRET"
+  /** and the text Meta sends back when the webhook is set up. */
+  | "WHATSAPP_VERIFY_TOKEN";
 
 export interface SecretSource {
   get(name: SecretName): string | undefined;
