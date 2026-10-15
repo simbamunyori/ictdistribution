@@ -87,6 +87,16 @@ ANTHROPIC_API_KEY=
 QUOTES_EMAIL=quotes@$DOMAIN
 IMAP_URL=
 
+# Optional: requests for price to suppliers on WhatsApp, and their replies
+# (docs/quotes.md, "WhatsApp"). While these are empty, WhatsApp requests
+# are sent by hand from the admin area.
+WHATSAPP_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_TEMPLATE=price_request
+WHATSAPP_TEMPLATE_LANGUAGE=en
+WHATSAPP_APP_SECRET=
+WHATSAPP_VERIFY_TOKEN=
+
 # Exchange rates, fetched every six hours (docs/exchange-rates.md).
 RATE_SOURCE=open-er-api
 

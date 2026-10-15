@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import type { Table } from "@/lib/price-list";
-import { guessCategory, readTable, readText, type ReadLine } from "@/lib/quote-reading";
+import { guessCategory, readTable, readText, spreadShipping, type ReadLine } from "@/lib/quote-reading";
 import { secret } from "@/server/secrets";
 
 /**
@@ -42,6 +42,19 @@ export interface ReplyLine {
   /** yyyy-mm-dd */
   validUntil: string | null;
   notes: string;
+  /** Their delivery or freight charge to us per unit, as decimal text, when they quote one. */
+  shipping?: string | null;
+}
+
+export interface SupplierReplyInput {
+  /** The email body or WhatsApp text. */
+  text: string;
+  lines: ReplyLineInput[];
+  currency: string;
+  /** Their own quote, attached: a PDF, a spreadsheet read into cells, or photos. */
+  pdf?: { name: string; bytes: Uint8Array } | null;
+  table?: Table | null;
+  images?: { mediaType: string; bytes: Uint8Array }[];
 }
 
 export interface QuoteReader {
@@ -49,7 +62,7 @@ export interface QuoteReader {
   readonly name: string;
   readRequest(input: RequestInput): Promise<ReadLine[]>;
   /** Null when it can't read prices from the reply: a person enters them. */
-  readSupplierReply(input: { text: string; lines: ReplyLineInput[]; currency: string }): Promise<ReplyLine[] | null>;
+  readSupplierReply(input: SupplierReplyInput): Promise<ReplyLine[] | null>;
 }
 
 /** The rules alone: no AI. A PDF becomes one flagged line for a person to read. */
@@ -92,9 +105,11 @@ const ReplyLines = z.object({
       available: z.number().int().nullable(),
       leadTimeDays: z.number().int().nullable().describe("Days to deliver to us. Convert weeks to days."),
       validUntil: z.string().nullable().describe("yyyy-mm-dd, if they say how long the price holds."),
+      shippingPerUnit: z.string().nullable().describe("Their delivery, shipping or freight charge to us per unit for this line, as plain decimal text, only if they quote one for this line. Null otherwise."),
       notes: z.string(),
     }),
   ),
+  shippingTotal: z.string().nullable().describe("One delivery, shipping or freight charge for the whole order, as plain decimal text, if they quote it that way. Null if they don't, or if it is already given per line."),
 });
 
 const REQUEST_PROMPT = `You read requests for quote sent to an ICT distributor: typed lists, pasted emails, spreadsheets and tender documents.
@@ -110,9 +125,9 @@ Rules:
 Categories (slug: name):
 `;
 
-const REPLY_PROMPT = `You read a supplier's email reply to our request for price. Our request numbered each line L1, L2 and so on.
+const REPLY_PROMPT = `You read a supplier's reply to our request for price, sent by email or WhatsApp, with any quote document or photo they attached. Our request numbered each line L1, L2 and so on. Their own quote may number lines differently: match by product and quantity.
 
-For each line they answer, give the price per unit, currency, quantity available, lead time in days, how long the price holds, and any note. If they can't supply a line, set noOffer. If they give a total for a line instead of a unit price, divide by the quantity. Never guess a price. Set readable to false if the reply has no usable prices.`;
+For each line they answer, give the price per unit, currency, quantity available, lead time in days, how long the price holds, and any note. If they can't supply a line, set noOffer. If they give a total for a line instead of a unit price, divide by the quantity. If they quote delivery, shipping or freight to us, give it per unit for the line it belongs to, or as one total for the whole order. Prices are before tax: if they only give prices with VAT or another tax, say so in the note. Never guess a price. Set readable to false if the reply has no usable prices.`;
 
 /** Claude, with the rules as a fallback when the call fails. */
 export class ClaudeReader implements QuoteReader {
@@ -163,14 +178,24 @@ export class ClaudeReader implements QuoteReader {
     }
   }
 
-  async readSupplierReply(input: { text: string; lines: ReplyLineInput[]; currency: string }): Promise<ReplyLine[] | null> {
+  async readSupplierReply(input: SupplierReplyInput): Promise<ReplyLine[] | null> {
     const asked = input.lines.map((l) => `${l.ref}: ${l.quantity} x ${l.description}`).join("\n");
-    const text = `${REPLY_PROMPT}\n\nWe asked for prices in ${input.currency}:\n${asked}\n\nTheir reply:\n${input.text.slice(0, 30_000)}`;
+    const content: Anthropic.Beta.Messages.BetaContentBlockParam[] = [];
+    if (input.pdf) content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: Buffer.from(input.pdf.bytes).toString("base64") }, title: input.pdf.name });
+    for (const img of (input.images ?? []).slice(0, 4)) content.push({ type: "image", source: { type: "base64", media_type: img.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp", data: Buffer.from(img.bytes).toString("base64") } });
+    const table = input.table
+      ? `\n\nTheir spreadsheet, one row per line, cells separated by |:\n${input.table
+          .slice(0, 300)
+          .map((r) => r.map((c) => (c === null || c === undefined ? "" : String(c))).join(" | "))
+          .join("\n")}`
+      : "";
+    content.push({ type: "text", text: `${REPLY_PROMPT}\n\nWe asked for prices in ${input.currency}:\n${asked}\n\nTheir reply:\n${input.text.slice(0, 30_000) || "(no text, only the attachment)"}${table}` });
     try {
-      const out = await this.parse(ReplyLines, [{ type: "text", text }]);
+      const out = await this.parse(ReplyLines, content);
       if (!out?.readable) return null;
       const refs = new Set(input.lines.map((l) => l.ref));
-      return out.lines.filter((l) => refs.has(l.ref));
+      const lines = out.lines.filter((l) => refs.has(l.ref)).map(({ shippingPerUnit, ...l }) => ({ ...l, shipping: shippingPerUnit }));
+      return spreadShipping(lines, new Map(input.lines.map((l) => [l.ref, l.quantity])), out.shippingTotal, input.currency);
     } catch (e) {
       if (e instanceof Anthropic.APIError || e instanceof Anthropic.APIConnectionError) {
         console.error("Reading a supplier reply with Claude failed; leaving it for a person:", e.message);

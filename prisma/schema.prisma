@@ -1366,6 +1366,8 @@ model QuoteSettings {
   projectMarkupBps    Int?
   /// Sales are reminded this many hours before a tender closes.
   tenderReminderHours Int      @default(72)
+  /// Requests for price also go on WhatsApp to suppliers with a WhatsApp number, once WhatsApp is connected.
+  whatsappRequests    Boolean  @default(true)
   quotePrefix         String   @default("Q")
   updatedAt           DateTime @updatedAt
 }
@@ -1525,9 +1527,9 @@ enum ReachChannel {
 }
 
 enum PriceRequestStatus {
-  /// Emailed; waiting for their answer.
+  /// Sent by email, WhatsApp or both; waiting for their answer.
   SENT
-  /// WhatsApp until the Fourth Generation hub is live: staff send the link by hand.
+  /// WhatsApp only, and WhatsApp isn't connected or the message failed: staff send the link by hand.
   TO_SEND_BY_HAND
   RESPONDED
   /// The deadline passed without an answer.
@@ -1553,7 +1555,7 @@ model SupplierPriceRequest {
   deadline    DateTime
   sentAt      DateTime?
   respondedAt DateTime?
-  /// Their general note, and a plain email reply as received.
+  /// Their general note, and a plain email or WhatsApp reply as received.
   note        String             @default("")
   replyText   String?
   createdAt   DateTime           @default(now())
@@ -1561,6 +1563,8 @@ model SupplierPriceRequest {
   quote     Quote                   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   supplier  Supplier                @relation(fields: [supplierId], references: [id], onDelete: Cascade)
   responses SupplierQuoteResponse[]
+  whatsapp  WhatsAppMessage[]
+  files     SupplierReplyFile[]
 
   @@index([quoteId])
   @@index([status, deadline])
@@ -1580,7 +1584,9 @@ model SupplierQuoteResponse {
   leadTimeDays Int?
   validUntil   DateTime?
   notes        String    @default("")
-  /// "page", "email" or "staff".
+  /// Their delivery or freight charge to us per unit, in `currency`, when they quote one. It takes the place of our freight estimate in the landed cost.
+  freightMinor BigInt?
+  /// "page", "email", "whatsapp" or "staff".
   source       String
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -1590,6 +1596,78 @@ model SupplierQuoteResponse {
 
   @@unique([requestId, lineId])
   @@index([lineId])
+}
+
+/// A file a supplier sent with their reply (a PDF, spreadsheet or photo of their quote), kept for staff.
+model SupplierReplyFile {
+  id        String       @id @default(cuid())
+  requestId String
+  channel   ReachChannel
+  name      String
+  mediaType String
+  bytes     Bytes
+  createdAt DateTime     @default(now())
+
+  request SupplierPriceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+enum WhatsAppDirection {
+  OUT
+  IN
+}
+
+enum WhatsAppStatus {
+  /// Out: waiting to be sent, or to be tried again.
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  /// In: waiting to be read.
+  RECEIVED
+  /// In: prices read from it.
+  HANDLED
+  /// In: kept on the request for staff to enter by hand.
+  KEPT
+  /// In: not from a supplier, or nothing to do with a request.
+  IGNORED
+}
+
+/// Every WhatsApp message to and from suppliers (WhatsApp Business Cloud API), with its delivery status.
+model WhatsAppMessage {
+  id            String            @id @default(cuid())
+  direction     WhatsAppDirection
+  /// Their number, digits only with the country code, e.g. 8613800000000.
+  number        String
+  status        WhatsAppStatus
+  /// WhatsApp's id for the message (wamid), once sent or as received.
+  waMessageId   String?           @unique
+  requestId     String?
+  supplierId    String?
+  /// In: the id of our message they replied to.
+  contextId     String?
+  /// Out: the template's values, with the link sealed until it is sent. In: the type, and the media id, name and type.
+  payload       Json
+  /// In: their text or caption.
+  text          String            @default("")
+  attempts      Int               @default(0)
+  nextAttemptAt DateTime          @default(now())
+  lastError     String?
+  /// In: what was done with it.
+  note          String            @default("")
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  readAt        DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  request SupplierPriceRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  @@index([status, nextAttemptAt])
+  @@index([requestId])
+  @@index([number, createdAt])
 }
 
 /// Every email read from the quotes mailbox, once, and what was done with it.

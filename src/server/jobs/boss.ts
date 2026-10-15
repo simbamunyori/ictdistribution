@@ -5,7 +5,7 @@ import { prisma } from "@/server/db";
 import { emailAdapter } from "@/server/email/adapter";
 import { deliverDue } from "@/server/email/outbox";
 import { env } from "@/server/env";
-import { appKey } from "@/server/secrets";
+import { appKey, secret } from "@/server/secrets";
 
 /**
  * Background jobs, on pg-boss in the same PostgreSQL database, so a job
@@ -21,6 +21,32 @@ export function deliverEmail() {
   return deliverDue(prisma, emailAdapter(), { appUrl: e.APP_URL, legalName: e.COMPANY_LEGAL_NAME, key: appKey() });
 }
 
+/** What quoting needs to run here: WhatsApp counts as connected once its token, number and template are set. */
+async function quoteDeps() {
+  const { whatsappConfig } = await import("@/server/whatsapp/cloud");
+  return { key: appKey(), replyTo: env().QUOTES_EMAIL, whatsapp: whatsappConfig() !== null };
+}
+
+/** WhatsApp (docs/quotes.md): reads stored supplier messages, then sends the requests that are due. Off while it isn't connected. */
+export async function runWhatsApp() {
+  const { CloudApi, whatsappConfig } = await import("@/server/whatsapp/cloud");
+  const token = secret("WHATSAPP_TOKEN");
+  const phoneNumberId = env().WHATSAPP_PHONE_NUMBER_ID;
+  if (!token || !phoneNumberId) return { read: 0, sent: 0 };
+  const api = new CloudApi({ token, phoneNumberId });
+  const { handleWhatsAppInbound } = await import("@/server/whatsapp/inbound");
+  const read = await handleWhatsAppInbound(prisma, await quoteDeps(), api);
+  const cfg = whatsappConfig();
+  let sent = 0;
+  if (cfg) {
+    const { deliverWhatsApp } = await import("@/server/whatsapp/outbox");
+    sent = await deliverWhatsApp(prisma, api, cfg, { key: appKey(), appUrl: env().APP_URL });
+  }
+  // An answer can price and send a quote: its email goes now.
+  if (read) await deliverEmail();
+  return { read, sent };
+}
+
 const JOBS: Job[] = [
   { name: "email-deliver", cron: "* * * * *", inline: true, run: deliverEmail },
   {
@@ -30,11 +56,14 @@ const JOBS: Job[] = [
     inline: true,
     run: async () => {
       const { quoteTick } = await import("@/server/quotes/tick");
-      const result = await quoteTick(prisma, { key: appKey(), replyTo: env().QUOTES_EMAIL });
+      const result = await quoteTick(prisma, await quoteDeps());
       await deliverEmail();
+      await runWhatsApp();
       return result;
     },
   },
+  // Requests for price on WhatsApp and suppliers' replies there. The webhook starts it at once when a message arrives.
+  { name: "whatsapp", cron: "* * * * *", inline: true, run: runWhatsApp },
   {
     // Purchase orders for orders paid or put on account (docs/procurement.md). Placing and paying an order start it at once; this catches the rest.
     name: "procurement",
@@ -56,7 +85,7 @@ const JOBS: Job[] = [
       if (!e.IMAP_URL) return 0;
       const { pollMailbox } = await import("@/server/quotes/mailbox");
       const own = [e.QUOTES_EMAIL, /<([^>]+)>/.exec(e.MAIL_FROM)?.[1] ?? e.MAIL_FROM].filter((a): a is string => Boolean(a));
-      const n = await pollMailbox(prisma, { key: appKey(), replyTo: e.QUOTES_EMAIL, ownAddresses: own }, e.IMAP_URL);
+      const n = await pollMailbox(prisma, { ...(await quoteDeps()), ownAddresses: own }, e.IMAP_URL);
       if (n) await runSoon("quotes");
       return n;
     },

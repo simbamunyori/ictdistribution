@@ -36,6 +36,12 @@ const schema = z.object({
   QUOTES_EMAIL: optionalText(),
   /** Reading that mailbox, e.g. imaps://quotes%40ictdistribution.africa:password@imap.example.com:993. Unset: email intake is off. */
   IMAP_URL: optionalUrl(),
+  /** WhatsApp Business Cloud API: the business number's id. Its token is WHATSAPP_TOKEN (docs/quotes.md, "WhatsApp"). */
+  WHATSAPP_PHONE_NUMBER_ID: optionalText(),
+  /** The approved template that carries a request for price. Unset: WhatsApp requests are sent by hand. */
+  WHATSAPP_TEMPLATE: optionalText(),
+  /** The template's language code, as approved. */
+  WHATSAPP_TEMPLATE_LANGUAGE: z.string().min(2).default("en"),
   /** Set to "off" to stop background jobs on this server. */
   JOBS: z.enum(["on", "off"]).default("on"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

@@ -49,6 +49,8 @@ export interface QuoteDeps {
   reader?: QuoteReader;
   /** Where supplier replies should go: the quotes mailbox. */
   replyTo?: string;
+  /** WhatsApp is connected (WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_TEMPLATE set), so requests can go by it. */
+  whatsapp?: boolean;
 }
 
 export async function quoteSettings(db: Pick<PrismaClient, "quoteSettings">) {

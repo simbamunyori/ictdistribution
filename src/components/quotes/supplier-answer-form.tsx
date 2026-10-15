@@ -14,6 +14,7 @@ export interface AnswerFormLine {
   quantity: number;
   /** What was given before, to change it. */
   price: string;
+  shipping: string;
   available: string;
   leadTimeDays: string;
   validUntil: string;
@@ -45,8 +46,9 @@ export function SupplierAnswerForm({ action, hidden, lines, currency, note, subm
             Quantity {l.quantity}
             {l.mpn ? `, part ${l.mpn}` : ""}
           </p>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <TextField id={`price-${l.id}`} name={`price-${l.id}`} label={`Price each (${currency})`} inputMode="decimal" defaultValue={value(`price-${l.id}`, l.price)} error={err[`price-${l.id}`]} hint="Before tax." />
+            <TextField id={`shipping-${l.id}`} name={`shipping-${l.id}`} label={`Delivery to us, each (${currency}, optional)`} inputMode="decimal" defaultValue={value(`shipping-${l.id}`, l.shipping)} error={err[`shipping-${l.id}`]} hint="Only if you charge delivery separately." />
             <TextField id={`available-${l.id}`} name={`available-${l.id}`} label="How many you have (optional)" inputMode="numeric" defaultValue={value(`available-${l.id}`, l.available)} error={err[`available-${l.id}`]} />
             <TextField id={`lead-${l.id}`} name={`lead-${l.id}`} label="Days to deliver (optional)" inputMode="numeric" defaultValue={value(`lead-${l.id}`, l.leadTimeDays)} error={err[`lead-${l.id}`]} />
             <TextField id={`valid-${l.id}`} name={`valid-${l.id}`} label="Price holds until (optional)" type="date" defaultValue={value(`valid-${l.id}`, l.validUntil)} error={err[`valid-${l.id}`]} />

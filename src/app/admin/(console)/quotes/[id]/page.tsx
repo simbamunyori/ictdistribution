@@ -18,7 +18,7 @@ import { env } from "@/server/env";
 import { DomainError } from "@/server/errors";
 import { pricingSettings } from "@/server/pricing/rates";
 import { OPEN_STATUSES, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, QUOTE_TYPE_LABEL, staffWhen } from "@/server/quotes/common";
-import { durationText, getQuote } from "@/server/quotes/staff";
+import { durationText, getQuote, rfqEmails } from "@/server/quotes/staff";
 import { answerFormLines, isOpenRequest, supplierMoney, whatsappLink } from "@/server/quotes/suppliers";
 import { appKey } from "@/server/secrets";
 import { staffCan } from "@/server/staff/access";
@@ -26,6 +26,8 @@ import { staffCan } from "@/server/staff/access";
 export const metadata: Metadata = { title: "Quote" };
 
 const REQUEST_STATUS = { SENT: "Sent", TO_SEND_BY_HAND: "To send on WhatsApp", RESPONDED: "Answered", EXPIRED: "No answer by the deadline", CLOSED: "Closed" } as const;
+const EMAIL_STATUS = { QUEUED: "waiting to go", SENT: "sent", FAILED: "failed" } as const;
+const WHATSAPP_STATUS = { QUEUED: "waiting to go", SENT: "sent", DELIVERED: "delivered", READ: "read", FAILED: "failed" } as const;
 const REQUEST_TONE = { SENT: "neutral", TO_SEND_BY_HAND: "warning", RESPONDED: "positive", EXPIRED: "negative", CLOSED: "neutral" } as const;
 const COST_SOURCE = { CATALOGUE: "Catalogue offer", SUPPLIER: "Supplier's answer", STAFF: "Typed by staff" } as const;
 
@@ -39,7 +41,15 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
     throw e;
   });
   if (!q) notFound();
-  const [categories, base, order] = await Promise.all([categoryOptions(prisma), pricingSettings(prisma).then((p) => p.baseCurrency), prisma.order.findUnique({ where: { quoteId: q.id }, select: { id: true, number: true } })]);
+  const [categories, base, order, emails] = await Promise.all([
+    categoryOptions(prisma),
+    pricingSettings(prisma).then((p) => p.baseCurrency),
+    prisma.order.findUnique({ where: { quoteId: q.id }, select: { id: true, number: true } }),
+    rfqEmails(
+      prisma,
+      q.priceRequests.map((r) => r.reference),
+    ),
+  ]);
   const { locale, timeZone } = q.market;
   const money = (amountMinor: bigint | null, currency = q.currency) => (amountMinor === null ? "" : formatMoney({ amountMinor, currency }, locale));
   const showCost = staffCan(role, "viewSuppliers");
@@ -172,6 +182,7 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
                         {l.responses.map((r) => (
                           <li key={r.id}>
                             {r.request.supplier.name}: {r.noOffer ? "can't supply" : `${supplierMoney(r.costMinor, r.currency, locale)} each`}
+                            {r.freightMinor !== null && !r.noOffer ? `, plus ${supplierMoney(r.freightMinor, r.currency, locale)} delivery each` : ""}
                             {r.available !== null ? `, ${r.available} available` : ""}
                             {r.leadTimeDays !== null ? `, ${r.leadTimeDays} days` : ""}
                             {r.notes ? `. ${r.notes}` : ""}
@@ -248,18 +259,36 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
                 const lines = q.lines.filter((l) => r.lineIds.includes(l.id));
                 const wa = r.status === "TO_SEND_BY_HAND" ? whatsappLink(r, r.supplier, lines, appKey(), e.APP_URL, company.name) : null;
                 const open = isOpenRequest({ status: r.status, quote: q });
+                const mail = emails.get(r.reference);
                 return (
                   <li key={r.id} className="rounded-lg border border-line p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <p className="font-semibold">
                         {r.supplier.name}, {r.reference}
                         <span className="block text-callout font-normal text-ink-muted">
-                          {r.channel === "EMAIL" ? `By email to ${r.supplier.email}` : `On WhatsApp to ${r.supplier.whatsapp}`}, {lines.length} {lines.length === 1 ? "line" : "lines"}, answer by {staffWhen(r.deadline)}
+                          {lines.length} {lines.length === 1 ? "line" : "lines"}, answer by {staffWhen(r.deadline)}
                           {r.respondedAt ? `. Answered ${staffWhen(r.respondedAt)}` : ""}
                         </span>
                       </p>
                       <Badge tone={REQUEST_TONE[r.status]}>{REQUEST_STATUS[r.status]}</Badge>
                     </div>
+                    <ul className="mt-2 text-callout">
+                      {mail ? (
+                        <li>
+                          Email to {mail.to}: {EMAIL_STATUS[mail.status as keyof typeof EMAIL_STATUS] ?? mail.status}
+                          {mail.sentAt ? ` ${staffWhen(mail.sentAt)}` : ""}
+                          {mail.lastError ? `. ${mail.lastError}` : ""}
+                        </li>
+                      ) : null}
+                      {r.whatsapp.map((m) => (
+                        <li key={m.id}>
+                          WhatsApp to +{m.number}: {WHATSAPP_STATUS[m.status as keyof typeof WHATSAPP_STATUS] ?? m.status}
+                          {m.readAt ? ` ${staffWhen(m.readAt)}` : m.deliveredAt ? ` ${staffWhen(m.deliveredAt)}` : m.sentAt ? ` ${staffWhen(m.sentAt)}` : ""}
+                          {m.lastError ? `. ${m.lastError}` : ""}
+                        </li>
+                      ))}
+                      {!mail && !r.whatsapp.length && r.channel === "WHATSAPP" ? <li>WhatsApp to {r.supplier.whatsapp}, by hand</li> : null}
+                    </ul>
                     {r.status === "TO_SEND_BY_HAND" && canAsk ? (
                       <div className="mt-3 flex flex-wrap items-center gap-3">
                         {wa ? (
@@ -273,9 +302,18 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
                     {r.note ? <p className="mt-3 text-callout">Their note: {r.note}</p> : null}
                     {r.replyText ? (
                       <details className="mt-3">
-                        <summary className="cursor-pointer text-callout font-semibold text-link">Their email reply</summary>
+                        <summary className="cursor-pointer text-callout font-semibold text-link">Their reply</summary>
                         <p className="mt-2 max-h-80 overflow-auto rounded-md bg-surface p-3 text-callout whitespace-pre-line">{r.replyText}</p>
                       </details>
+                    ) : null}
+                    {r.files.length ? (
+                      <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-callout">
+                        {r.files.map((f) => (
+                          <a key={f.id} href={`/admin/quotes/${q.id}/reply-file/${f.id}`} className="font-semibold text-link underline underline-offset-4">
+                            {f.name} ({f.channel === "EMAIL" ? "email" : "WhatsApp"})
+                          </a>
+                        ))}
+                      </p>
                     ) : null}
                     {open && canAsk ? (
                       <details className="mt-3">

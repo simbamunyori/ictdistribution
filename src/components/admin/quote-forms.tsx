@@ -91,14 +91,15 @@ export interface RulesValues {
   tenderMarkupPercent: string;
   projectMarkupPercent: string;
   tenderReminderHours: string;
+  whatsappRequests: boolean;
 }
 
 /** The Admin's rules for quotes: when one goes out by itself, supplier deadlines, validity and markups. */
-export function QuoteRulesForm({ given, base, canEdit }: { given: RulesValues; base: string; canEdit: boolean }) {
+export function QuoteRulesForm({ given, base, canEdit, whatsapp }: { given: RulesValues; base: string; canEdit: boolean; whatsapp: string }) {
   const [state, action, pending] = useActionState(updateQuoteRulesAction, initial);
-  const v = state.values && !state.ok ? { ...state.values, automationEnabled: state.values.automationEnabled === "on" } : given;
+  const v = state.values && !state.ok ? { ...state.values, automationEnabled: state.values.automationEnabled === "on", whatsappRequests: state.values.whatsappRequests === "on" } : given;
   const err = state.fieldErrors ?? {};
-  const text = (k: Exclude<keyof RulesValues, "automationEnabled">) => String((v as Record<string, unknown>)[k] ?? "");
+  const text = (k: Exclude<keyof RulesValues, "automationEnabled" | "whatsappRequests">) => String((v as Record<string, unknown>)[k] ?? "");
   return (
     <form action={action} className="flex flex-col gap-6" noValidate>
       <fieldset disabled={!canEdit} className="flex flex-col gap-6">
@@ -119,6 +120,7 @@ export function QuoteRulesForm({ given, base, canEdit }: { given: RulesValues; b
             <TextField id="urgentSupplierHours" label="Hours when urgent" inputMode="numeric" defaultValue={text("urgentSupplierHours")} error={err.urgentSupplierHours} />
             <TextField id="validityDays" label="Days a quote is valid" inputMode="numeric" defaultValue={text("validityDays")} error={err.validityDays} />
           </div>
+          <CheckboxField id="whatsappRequests" label="Send requests for price on WhatsApp too" defaultChecked={Boolean(v.whatsappRequests)} hint={`Suppliers with a WhatsApp number get the request there as well as by email. ${whatsapp}`} />
         </section>
         <section className="flex flex-col gap-4">
           <h2 className="text-headline font-bold">Markups and tenders</h2>

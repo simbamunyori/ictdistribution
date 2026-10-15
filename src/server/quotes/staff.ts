@@ -48,8 +48,23 @@ export const STAFF_QUOTE_INCLUDE = {
       responses: { include: { request: { select: { supplier: { select: { name: true } } } } } },
     },
   },
-  priceRequests: { orderBy: { createdAt: "asc" }, include: { supplier: { select: { id: true, name: true, email: true, whatsapp: true, currency: true } }, responses: true } },
+  priceRequests: {
+    orderBy: { createdAt: "asc" },
+    include: {
+      supplier: { select: { id: true, name: true, email: true, whatsapp: true, currency: true } },
+      responses: true,
+      whatsapp: { where: { direction: "OUT" }, orderBy: { createdAt: "asc" }, select: { id: true, number: true, status: true, lastError: true, sentAt: true, deliveredAt: true, readAt: true, createdAt: true } },
+      files: { orderBy: { createdAt: "asc" }, select: { id: true, name: true, channel: true, createdAt: true } },
+    },
+  },
 } satisfies Prisma.QuoteInclude;
+
+/** How each request's email went, by its reference: queued, sent or failed. */
+export async function rfqEmails(db: Pick<PrismaClient, "outboundEmail">, references: string[]) {
+  if (!references.length) return new Map<string, { status: string; to: string; sentAt: Date | null; lastError: string | null }>();
+  const rows = await db.outboundEmail.findMany({ where: { kind: "supplier.rfq", OR: references.map((r) => ({ payload: { path: ["reference"], equals: r } })) }, orderBy: { createdAt: "asc" }, select: { toAddress: true, status: true, sentAt: true, lastError: true, payload: true } });
+  return new Map(rows.map((r) => [String((r.payload as Record<string, string>).reference), { status: r.status, to: r.toAddress, sentAt: r.sentAt, lastError: r.lastError }]));
+}
 
 export async function getQuote(db: Pick<PrismaClient, "quote">, id: string) {
   const q = await db.quote.findUnique({ where: { id }, include: STAFF_QUOTE_INCLUDE, omit: { file: true } });
@@ -236,6 +251,8 @@ export interface RulesInput {
   tenderMarkupPercent: string;
   projectMarkupPercent: string;
   tenderReminderHours: string;
+  /** Requests for price on WhatsApp too, once it is connected. Left out: unchanged. */
+  whatsappRequests?: boolean;
 }
 
 /** The rules as the form shows them. */
@@ -255,6 +272,7 @@ export async function rulesForm(db: PrismaClient) {
       tenderMarkupPercent: pct(s.tenderMarkupBps),
       projectMarkupPercent: pct(s.projectMarkupBps),
       tenderReminderHours: String(s.tenderReminderHours),
+      whatsappRequests: s.whatsappRequests,
     },
   };
 }
@@ -296,6 +314,7 @@ export async function updateQuoteRules(db: PrismaClient, actor: StaffActor, inpu
     tenderMarkupBps: percent("tenderMarkupPercent", true),
     projectMarkupBps: percent("projectMarkupPercent", true),
     tenderReminderHours: whole("tenderReminderHours", 1, 720, "Enter hours, from 1 to 720."),
+    ...(input.whatsappRequests === undefined ? {} : { whatsappRequests: input.whatsappRequests }),
   };
   if (!fieldErrors.urgentSupplierHours && !fieldErrors.supplierHours && data.urgentSupplierHours > data.supplierHours) fieldErrors.urgentSupplierHours = "Urgent requests can't give suppliers longer than others.";
   if (Object.keys(fieldErrors).length) throw new DomainError("invalid", "Check the highlighted fields.", undefined, fieldErrors);

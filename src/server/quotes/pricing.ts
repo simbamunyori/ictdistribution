@@ -11,9 +11,10 @@ import { seal } from "@/server/auth/secret-box";
 import { hashToken, newToken } from "@/server/auth/tokens";
 import { queueEmail } from "@/server/email/outbox";
 import { DomainError } from "@/server/errors";
-import { landedAdder, landedContext, type LandedContext } from "@/server/logistics/landed";
+import { landedContext, quotedLandedAdder, type LandedContext } from "@/server/logistics/landed";
 import { asRate, currentRates, pricingSettings } from "@/server/pricing/rates";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
+import { queueRfqWhatsApp } from "@/server/whatsapp/outbox";
 import { DAY, HOUR, lineRef, quoteSettings, staffWhen, type QuoteDeps } from "./common";
 
 /**
@@ -44,13 +45,16 @@ async function lock(tx: Tx, quoteId: string) {
   await tx.$queryRaw`SELECT id FROM "Quote" WHERE id = ${quoteId} FOR UPDATE`;
 }
 
+type QuoteOffer = OfferForChoice & { responseId?: string; freightMinor?: bigint | null };
+
 /** A supplier's answer, ranked alongside catalogue offers. Only usable while its price holds and they can supply the quantity. */
-function responseOffer(r: PricingLine["responses"][number], quantity: number, today: Date): OfferForChoice & { responseId: string } {
+function responseOffer(r: PricingLine["responses"][number], quantity: number, today: Date): QuoteOffer {
   const valid = r.validUntil === null || r.validUntil.getTime() >= today.getTime();
   return {
     id: `response:${r.id}`,
     responseId: r.id,
     costMinor: r.costMinor ?? 0n,
+    freightMinor: r.freightMinor,
     currency: r.currency,
     leadTimeDays: r.leadTimeDays,
     stock: r.available !== null && r.available < quantity ? 0 : r.available,
@@ -63,9 +67,10 @@ function responseOffer(r: PricingLine["responses"][number], quantity: number, to
 function bestCost(line: PricingLine, globalRule: Parameters<typeof resolveRule>[0], base: string, rate: (c: string) => ReturnType<typeof asRate>, today: Date, logistics: LandedContext) {
   const cat = line.product?.category ?? line.category;
   const rule = resolveRule(line.product?.sourcingRule, cat?.sourcingRule, cat?.parent?.sourcingRule, globalRule);
-  const offers: (OfferForChoice & { responseId?: string })[] = [...(line.product?.offers ?? []), ...line.responses.map((r) => responseOffer(r, line.quantity, today))];
+  const offers: QuoteOffer[] = [...(line.product?.offers ?? []), ...line.responses.map((r) => responseOffer(r, line.quantity, today))];
   // Freight and duty need the product's weight; lines without a product use the supplier's allowance.
-  const adder = line.product ? landedAdder<OfferForChoice & { responseId?: string }>(logistics, { ...line.product, parentCategoryId: line.product.category.parentId }) : undefined;
+  // A delivery charge the supplier quoted takes the place of our freight estimate.
+  const adder = quotedLandedAdder<QuoteOffer>(logistics, line.product ? { ...line.product, parentCategoryId: line.product.category.parentId } : null, rate);
   const chosen = chooseOffer(offers, rule, base, rate, adder).chosen;
   if (!chosen?.landed) return null;
   return { source: chosen.offer.responseId ? ("SUPPLIER" as const) : ("CATALOGUE" as const), supplierId: chosen.offer.supplier.id, cost: chosen.landed.amountMinor, lead: chosen.leadTimeDays };
@@ -94,8 +99,10 @@ async function suppliersFor(tx: Tx, line: PricingLine): Promise<Supplier[]> {
 /**
  * Sends a request for price to every matching supplier for the lines
  * that have no price yet, one request per supplier covering all the
- * lines it could price. Email goes out at once; WhatsApp waits for staff
- * to send the link by hand until the hub is live. Returns how many.
+ * lines it could price. Email goes out at once, and so does WhatsApp
+ * when it is connected and switched on in the rules; otherwise a
+ * WhatsApp-only supplier waits for staff to send the link by hand.
+ * Returns how many.
  */
 async function askSuppliers(tx: Tx, deps: QuoteDeps, quote: { id: string; number: string; urgent: boolean; tenderDeadline: Date | null }, lines: PricingLine[], now: Date, onlyLineIds?: string[]) {
   const [settings, pricing] = await Promise.all([quoteSettings(tx), pricingSettings(tx)]);
@@ -117,6 +124,7 @@ async function askSuppliers(tx: Tx, deps: QuoteDeps, quote: { id: string; number
     }
   }
   if (!bySupplier.size) return { count: 0, deadline: null };
+  const whatsappOn = Boolean(deps.whatsapp) && settings.whatsappRequests;
   let deadline = new Date(now.getTime() + (quote.urgent ? settings.urgentSupplierHours : settings.supplierHours) * HOUR);
   // A tender needs a day after the suppliers answer for us to check and send it.
   if (quote.tenderDeadline && quote.tenderDeadline.getTime() - DAY < deadline.getTime()) deadline = new Date(Math.max(now.getTime() + HOUR, quote.tenderDeadline.getTime() - DAY));
@@ -124,19 +132,25 @@ async function askSuppliers(tx: Tx, deps: QuoteDeps, quote: { id: string; number
     const token = newToken();
     let reference = newReference();
     while (await tx.supplierPriceRequest.findUnique({ where: { reference } })) reference = newReference();
+    // Both channels when a supplier has both and WhatsApp is on: one request, one link, and whichever answer comes first counts.
     const byEmail = Boolean(supplier.email);
-    await tx.supplierPriceRequest.create({
-      data: { quoteId: quote.id, supplierId: supplier.id, reference, channel: byEmail ? "EMAIL" : "WHATSAPP", status: byEmail ? "SENT" : "TO_SEND_BY_HAND", lineIds: theirs.map((l) => l.id), tokenHash: hashToken(token), tokenSealed: seal(token, deps.key), deadline, sentAt: byEmail ? now : null },
+    const byWhatsApp = whatsappOn && Boolean(supplier.whatsapp);
+    const sent = byEmail || byWhatsApp;
+    const lineTexts = theirs.map((l) => `${lineRef(l.position)}: ${l.quantity} x ${l.description}${l.mpn ? ` (part ${l.mpn})` : ""}`);
+    const request = await tx.supplierPriceRequest.create({
+      data: { quoteId: quote.id, supplierId: supplier.id, reference, channel: byEmail ? "EMAIL" : "WHATSAPP", status: sent ? "SENT" : "TO_SEND_BY_HAND", lineIds: theirs.map((l) => l.id), tokenHash: hashToken(token), tokenSealed: seal(token, deps.key), deadline, sentAt: sent ? now : null },
     });
     if (byEmail) {
       await queueEmail(tx, deps.key, {
         to: supplier.email!,
         kind: "supplier.rfq",
-        payload: { reference, supplier: supplier.name, currency: supplier.currency, deadline: staffWhen(deadline), lines: theirs.map((l) => `${lineRef(l.position)}: ${l.quantity} x ${l.description}${l.mpn ? ` (part ${l.mpn})` : ""}`).join("\n"), urgent: quote.urgent ? "yes" : "", replyTo: deps.replyTo ?? "" },
+        payload: { reference, supplier: supplier.name, currency: supplier.currency, deadline: staffWhen(deadline), lines: lineTexts.join("\n"), urgent: quote.urgent ? "yes" : "", replyTo: deps.replyTo ?? "" },
         secret: { token },
       });
     }
-    await audit(tx, { ...SYSTEM_ACTOR, action: "quote.rfq-sent", summary: `Asked ${supplier.name} for prices on ${theirs.length} ${theirs.length === 1 ? "line" : "lines"} of quote ${quote.number} (${reference}), by ${byEmail ? "email" : "WhatsApp, to send by hand"}`, targetType: "Quote", targetId: quote.id });
+    if (byWhatsApp) await queueRfqWhatsApp(tx, deps.key, { requestId: request.id, supplierId: supplier.id, number: supplier.whatsapp!, supplier: supplier.name, reference, deadline: staffWhen(deadline), lines: lineTexts, token });
+    const how = sent ? [byEmail ? "email" : "", byWhatsApp ? "WhatsApp" : ""].filter(Boolean).join(" and ") : "WhatsApp, to send by hand";
+    await audit(tx, { ...SYSTEM_ACTOR, action: "quote.rfq-sent", summary: `Asked ${supplier.name} for prices on ${theirs.length} ${theirs.length === 1 ? "line" : "lines"} of quote ${quote.number} (${reference}), by ${how}`, targetType: "Quote", targetId: quote.id });
   }
   return { count: bySupplier.size, deadline };
 }
