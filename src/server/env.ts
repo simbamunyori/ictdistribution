@@ -32,6 +32,10 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: optionalText(),
   /** Where exchange rates come from: "open-er-api" (free, no key) or "off" to type them by hand. */
   RATE_SOURCE: z.enum(["open-er-api", "off"]).default("open-er-api"),
+  /** The quotes mailbox: customers email requests here and suppliers reply here, e.g. quotes@ictdistribution.africa. */
+  QUOTES_EMAIL: optionalText(),
+  /** Reading that mailbox, e.g. imaps://quotes%40ictdistribution.africa:password@imap.example.com:993. Unset: email intake is off. */
+  IMAP_URL: optionalUrl(),
   /** Set to "off" to stop background jobs on this server. */
   JOBS: z.enum(["on", "off"]).default("on"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

@@ -11,6 +11,7 @@ export function AccountNav({ organisation }: { organisation: boolean }) {
   const items = [
     { href: "/account", label: "Overview" },
     { href: "/account/orders", label: "Orders" },
+    { href: "/account/quotes", label: "Quotes" },
     ...(organisation
       ? [
           { href: "/account/team", label: "Team" },
@@ -27,7 +28,7 @@ export function AccountNav({ organisation }: { organisation: boolean }) {
           <li key={i.href}>
             <Link
               href={i.href}
-              aria-current={path === i.href ? "page" : undefined}
+              aria-current={path === i.href || (i.href === "/account/quotes" && path.startsWith("/account/quotes/")) ? "page" : undefined}
               className={cn("block rounded-md px-3 py-2 font-semibold whitespace-nowrap text-ink-muted hover:bg-surface hover:text-ink", path === i.href && "bg-surface text-ink")}
             >
               {i.label}

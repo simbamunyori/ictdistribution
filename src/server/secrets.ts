@@ -13,7 +13,9 @@ export type SecretName =
   /** 32 random bytes, base64: seals short-lived cookies and email codes. */
   | "APP_SECRET"
   | "MICROSOFT_CLIENT_SECRET"
-  | "GOOGLE_CLIENT_SECRET";
+  | "GOOGLE_CLIENT_SECRET"
+  /** Claude reads requests for quote and supplier replies (docs/quotes.md). Unset: rules read them. */
+  | "ANTHROPIC_API_KEY";
 
 export interface SecretSource {
   get(name: SecretName): string | undefined;

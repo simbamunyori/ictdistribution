@@ -81,6 +81,7 @@ model Market {
   specials         Special[]
   orders           Order[]
   customerPrices   CustomerPrice[]
+  quotes           Quote[]
 }
 
 /// Where customers in a market can collect an order.
@@ -296,6 +297,7 @@ model Organisation {
   customerPrices     CustomerPrice[]
   creditApplications CreditApplication[]
   orders             Order[]
+  quotes             Quote[]
 
   @@index([customerType])
   @@index([verification])
@@ -629,6 +631,7 @@ model Category {
   specials     Special[]
   markups      CategoryMarkup[]
   volumeBreaks VolumeBreak[]
+  quoteLines   QuoteLine[]
 
   @@index([parentId, sortOrder])
 }
@@ -741,6 +744,7 @@ model Product {
   cartLines      CartLine[]
   orderLines     OrderLine[]
   customerPrices CustomerPrice[]
+  quoteLines     QuoteLine[]
 
   @@unique([brandId, mpn])
   @@index([mpnKey])
@@ -837,13 +841,15 @@ model Supplier {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  currencyRef Currency           @relation(fields: [currency], references: [code], onDelete: Restrict)
+  currencyRef Currency               @relation(fields: [currency], references: [code], onDelete: Restrict)
   contacts    SupplierContact[]
   categories  SupplierCategory[]
   offers      SupplierOffer[]
   events      SupplierEvent[]
   format      PriceListFormat?
   imports     PriceListImport[]
+  quoteLines  QuoteLine[]
+  rfqs        SupplierPriceRequest[]
 }
 
 model SupplierContact {
@@ -1271,4 +1277,271 @@ model OrderPayment {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
+}
+
+// ─── D5: automated quotations ────────────────────────────────────────
+
+/// Rules for quotes, edited by an Admin at /admin/quotes/rules. One row, id "global".
+model QuoteSettings {
+  id                  String   @id @default("global")
+  /// Quotes inside every rule below go out without anyone checking them.
+  automationEnabled   Boolean  @default(true)
+  /// The largest quote that goes out by itself, in the base currency, before tax.
+  maxAutoValueMinor   BigInt   @default(500000)
+  /// The smallest margin a quote may have to go out by itself. 800 is 8%.
+  minMarginBps        Int      @default(800)
+  /// How sure a line's match to a catalogue product must be, 0 to 100.
+  minMatchConfidence  Int      @default(90)
+  /// Hours suppliers have to answer a request for price.
+  supplierHours       Int      @default(24)
+  /// The same, for urgent requests.
+  urgentSupplierHours Int      @default(6)
+  /// Days a quote stays valid.
+  validityDays        Int      @default(14)
+  /// Markup on tenders, in place of the customer's price level. Null: their level.
+  tenderMarkupBps     Int?
+  /// Markup on reseller projects, in place of the customer's price level. Null: their level.
+  projectMarkupBps    Int?
+  /// Sales are reminded this many hours before a tender closes.
+  tenderReminderHours Int      @default(72)
+  quotePrefix         String   @default("Q")
+  updatedAt           DateTime @updatedAt
+}
+
+enum QuoteType {
+  STANDARD
+  RESELLER_PROJECT
+  /// A government or enterprise tender, with a reference, a deadline and required documents.
+  TENDER
+}
+
+enum QuoteSource {
+  PORTAL
+  EMAIL
+  STAFF
+}
+
+enum QuoteStatus {
+  /// Waiting to be read into lines.
+  RECEIVED
+  /// Requests for price are out to suppliers.
+  WAITING_ON_SUPPLIERS
+  /// Priced, but outside the automation rules: a person checks it and sends it.
+  REVIEW
+  SENT
+  ACCEPTED
+  DECLINED
+  /// Not accepted before it ran out.
+  EXPIRED
+  CANCELLED
+}
+
+/// A request for quote and the quotation made from it.
+model Quote {
+  id                String           @id @default(cuid())
+  /// e.g. Q-100042.
+  number            String           @unique
+  type              QuoteType        @default(STANDARD)
+  source            QuoteSource
+  status            QuoteStatus      @default(RECEIVED)
+  marketCode        String
+  currency          String
+  /// The price level it is priced at.
+  customerType      CustomerTypeCode
+  userId            String?
+  organisationId    String?
+  email             String
+  name              String
+  phone             String           @default("")
+  /// The buyer's company, as they wrote it, when they are not a business account.
+  companyName       String           @default("")
+  customerReference String           @default("")
+  urgent            Boolean          @default(false)
+  tenderReference   String           @default("")
+  tenderDeadline    DateTime?
+  /// Documents the tender asks for, one per line.
+  requiredDocuments String           @default("")
+  /// Datasheets and warranty details go with the quote.
+  includeDocuments  Boolean          @default(false)
+  /// Typed or pasted lines, or the body of the email.
+  requestText       String           @default("")
+  fileName          String?
+  fileType          String?
+  file              Bytes?
+  /// Why it needs a person, one reason per line. Null when it doesn't.
+  reviewReasons     String?
+  supplierDeadline  DateTime?
+  /// Prices: lines before tax, the tax on them, and the total, in `currency`.
+  subtotalMinor     BigInt?
+  taxMinor          BigInt?
+  totalMinor        BigInt?
+  taxName           String           @default("VAT")
+  taxRateBps        Int              @default(0)
+  /// Internal: landed cost of the lines in the base currency, and the margin it leaves.
+  costBaseMinor     BigInt?
+  marginBps         Int?
+  /// Days from order to delivery, the longest line.
+  leadTimeDays      Int?
+  paymentTerms      String           @default("")
+  bankDetails       String           @default("")
+  validUntil        DateTime?
+  /// The secret in the link we email.
+  accessTokenHash   String?          @unique
+  readAt            DateTime?
+  pricedAt          DateTime?
+  sentAt            DateTime?
+  /// "Automatically", or the person who sent it.
+  sentByLabel       String?
+  acceptedAt        DateTime?
+  declinedAt        DateTime?
+  declineReason     String?
+  cancelledAt       DateTime?
+  reminderSentAt    DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  market        Market                 @relation(fields: [marketCode], references: [code], onDelete: Restrict)
+  organisation  Organisation?          @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  lines         QuoteLine[]
+  priceRequests SupplierPriceRequest[]
+
+  @@index([status, createdAt])
+  @@index([organisationId])
+  @@index([userId])
+  @@index([email])
+}
+
+enum CostSource {
+  /// A current supplier offer in the catalogue.
+  CATALOGUE
+  /// A supplier's answer to our request for price.
+  SUPPLIER
+  /// Typed by staff.
+  STAFF
+}
+
+model QuoteLine {
+  id                String      @id @default(cuid())
+  quoteId           String
+  position          Int
+  /// The line as the customer wrote it.
+  original          String
+  description       String
+  mpn               String      @default("")
+  quantity          Int
+  productId         String?
+  /// The product's category, or our best guess for a line we don't list.
+  categoryId        String?
+  /// How sure the match to `productId` is, 0 to 100. Staff confirming it makes it 100.
+  matchConfidence   Int         @default(0)
+  /// Unclear: a person must check it before the quote can go.
+  flagReason        String?
+  costSource        CostSource?
+  /// Internal: who we would buy it from, and its landed cost per unit in the base currency.
+  supplierId        String?
+  unitCostBaseMinor BigInt?
+  leadTimeDays      Int?
+  /// A price set by staff, before tax, in the quote's currency. Null: worked out from the cost.
+  priceOverride     BigInt?
+  /// Before tax, in the quote's currency.
+  unitPriceMinor    BigInt?
+  lineTotalMinor    BigInt?
+
+  quote     Quote                   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product   Product?                @relation(fields: [productId], references: [id], onDelete: SetNull)
+  category  Category?               @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplier  Supplier?               @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  responses SupplierQuoteResponse[]
+
+  @@index([quoteId, position])
+}
+
+enum ReachChannel {
+  EMAIL
+  WHATSAPP
+}
+
+enum PriceRequestStatus {
+  /// Emailed; waiting for their answer.
+  SENT
+  /// WhatsApp until the Fourth Generation hub is live: staff send the link by hand.
+  TO_SEND_BY_HAND
+  RESPONDED
+  /// The deadline passed without an answer.
+  EXPIRED
+  /// The quote no longer needs it.
+  CLOSED
+}
+
+/// A request for price to one supplier for some lines of one quote. Internal only.
+model SupplierPriceRequest {
+  id          String             @id @default(cuid())
+  quoteId     String
+  supplierId  String
+  /// Short code in the email subject, so a plain reply finds its way back, e.g. RFQ-7K2M9Q.
+  reference   String             @unique
+  channel     ReachChannel
+  status      PriceRequestStatus
+  /// The quote lines it asks about.
+  lineIds     String[]
+  tokenHash   String             @unique
+  /// The link's token, sealed with the app key, so staff can send it by hand.
+  tokenSealed String
+  deadline    DateTime
+  sentAt      DateTime?
+  respondedAt DateTime?
+  /// Their general note, and a plain email reply as received.
+  note        String             @default("")
+  replyText   String?
+  createdAt   DateTime           @default(now())
+
+  quote     Quote                   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  supplier  Supplier                @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  responses SupplierQuoteResponse[]
+
+  @@index([quoteId])
+  @@index([status, deadline])
+}
+
+/// One supplier's price for one quote line.
+model SupplierQuoteResponse {
+  id           String    @id @default(cuid())
+  requestId    String
+  lineId       String
+  /// They can't supply it.
+  noOffer      Boolean   @default(false)
+  /// Per unit, in `currency`, before freight and duties.
+  costMinor    BigInt?
+  currency     String
+  available    Int?
+  leadTimeDays Int?
+  validUntil   DateTime?
+  notes        String    @default("")
+  /// "page", "email" or "staff".
+  source       String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  request SupplierPriceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  line    QuoteLine            @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, lineId])
+  @@index([lineId])
+}
+
+/// Every email read from the quotes mailbox, once, and what was done with it.
+model InboundEmail {
+  id          String   @id @default(cuid())
+  messageId   String   @unique
+  fromAddress String
+  subject     String
+  /// "quote-request", "supplier-reply" or "ignored".
+  outcome     String
+  quoteId     String?
+  requestId   String?
+  note        String   @default("")
+  receivedAt  DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([fromAddress, createdAt])
 }

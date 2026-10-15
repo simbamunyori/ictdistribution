@@ -61,6 +61,10 @@ export async function seedReferenceData(db: PrismaClient): Promise<string[]> {
     await db.shopSettings.create({ data: { id: "global" } });
     added.push("shop settings");
   }
+  if (!(await db.quoteSettings.findUnique({ where: { id: "global" } }))) {
+    await db.quoteSettings.create({ data: { id: "global" } });
+    added.push("quote rules");
+  }
   added.push(...(await seedStarterCategories(db)));
   return added;
 }
@@ -103,6 +107,7 @@ export async function seedDemo(db: PrismaClient): Promise<string[]> {
   }
   added.push(...(await seedDemoCatalogue(db)));
   added.push(...(await seedDemoShop(db)));
+  added.push(...(await seedDemoSupplierCategories(db)));
   return added;
 }
 
@@ -136,6 +141,18 @@ async function seedDemoShop(db: PrismaClient): Promise<string[]> {
   if (monitor) await db.special.create({ data: { ...all, slug: "demo-monitor-week", name: `Monitor week ${DEMO_SUFFIX}`, description: "5% off every monitor.", kind: "CATEGORY", categoryId: monitor.categoryId, discountBps: 500, endsAt: new Date(now + 5 * day), featured: true } });
   if (laptop && memory) await db.special.create({ data: { ...all, slug: "demo-laptop-memory-bundle", name: `ThinkPad with 16 GB more memory ${DEMO_SUFFIX}`, description: "The laptop and a second 16 GB stick, together.", kind: "BUNDLE", discountBps: 800, endsAt: new Date(now + 20 * day), quantityLimit: 5, featured: true, items: { create: [{ productId: laptop.id }, { productId: memory.id }] } } });
   return ["demo shop for Botswana: bank details, delivery, a collection point, featured products and three specials"];
+}
+
+/** What the demo suppliers supply, so quotes for items we don't list can ask them for prices. */
+async function seedDemoSupplierCategories(db: PrismaClient): Promise<string[]> {
+  const suppliers = await db.supplier.findMany({ where: { name: { endsWith: DEMO_SUFFIX } }, orderBy: { name: "asc" }, include: { _count: { select: { categories: true } } } });
+  if (!suppliers.length || suppliers.some((x) => x._count.categories)) return [];
+  const categories = await db.category.findMany({ where: { slug: { in: ["laptops", "phones", "monitors", "memory", "networking"] } }, select: { id: true, slug: true } });
+  const pick = (...slugs: string[]) => categories.filter((c) => slugs.includes(c.slug));
+  const [local, china] = [suppliers.find((x) => x.kind === "LOCAL"), suppliers.find((x) => x.kind === "CHINA")];
+  if (local) await db.supplierCategory.createMany({ data: pick("laptops", "monitors", "memory", "networking").map((c) => ({ supplierId: local.id, categoryId: c.id })), skipDuplicates: true });
+  if (china) await db.supplierCategory.createMany({ data: pick("laptops", "phones", "memory").map((c) => ({ supplierId: china.id, categoryId: c.id })), skipDuplicates: true });
+  return ["categories for the demo suppliers"];
 }
 
 const DEMO_PRODUCTS: { category: string; brand: string; name: string; mpn: string; summary: string; specs: SpecValues; individuals: boolean; warranty: number; offers: [supplier: number, cost: string, lead: number | null, stock: number | null][] }[] = [

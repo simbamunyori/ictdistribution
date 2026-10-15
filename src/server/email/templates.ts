@@ -10,7 +10,8 @@ export interface TemplateContext {
   appUrl: string;
 }
 
-export type Rendered = { subject: string; body: EmailBody } | null;
+/** `replyTo` sends answers somewhere other than the sending address, such as the quotes mailbox. */
+export type Rendered = { subject: string; body: EmailBody; replyTo?: string } | null;
 type Template = (payload: Record<string, unknown>, ctx: TemplateContext) => Rendered;
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -144,6 +145,78 @@ export const TEMPLATES: Record<string, Template> = {
     body: {
       heading: "Your order is cancelled",
       paragraphs: [`We cancelled order ${str(p.number)}: ${str(p.reason)}.`, str(p.refund) ? "We'll refund what you paid and email you when it's done." : "Nothing was paid, so nothing more is needed."],
+    },
+  }),
+  "quote.received": (p, ctx) => ({
+    subject: `We have your request for quote ${str(p.number)}`,
+    body: {
+      heading: `Thank you, ${str(p.name)}`,
+      paragraphs: [
+        `We have your ${str(p.type).toLowerCase()} request${str(p.reference) ? `, ${str(p.reference)},` : ""} as quote ${str(p.number)}.`,
+        "We are pricing it now and will email the quote as soon as it is ready. Lines we need to ask our suppliers about can take up to a working day.",
+      ],
+      button: { label: "See your quotes", url: `${ctx.appUrl}/account/quotes` },
+      footnote: "Reply to this email if anything in the request needs to change.",
+    },
+  }),
+  "quote.sent": (p, ctx) => {
+    const link = `${ctx.appUrl}/quotes/${encodeURIComponent(str(p.number))}?t=${encodeURIComponent(str(p.token))}`;
+    return {
+      subject: `Your quote ${str(p.number)} is ready`,
+      body: {
+        heading: "Your quote is ready",
+        paragraphs: [
+          `Quote ${str(p.number)}${str(p.tender) ? ` for tender ${str(p.tender)}` : ""} comes to ${str(p.total)} including ${str(p.taxName)}, for ${str(p.lines)} ${str(p.lines) === "1" ? "line" : "lines"}.`,
+          `It is valid until ${str(p.validUntil)}. Accept it online and we start on your order, or download it as a PDF for your records.`,
+        ],
+        button: { label: "See and accept the quote", url: link },
+        footnote: `The PDF: ${ctx.appUrl}/quotes/${encodeURIComponent(str(p.number))}/pdf?t=${encodeURIComponent(str(p.token))}. Keep this email: its links open the quote without signing in.`,
+      },
+    };
+  },
+  "quote.accepted": (p) => ({
+    subject: `Quote ${str(p.number)} accepted`,
+    body: {
+      heading: "Thank you for your order",
+      paragraphs: [`You accepted quote ${str(p.number)} for ${str(p.total)}.`, "We will send you a pro forma invoice and confirm delivery. Reply to this email with any questions."],
+    },
+  }),
+  "quote.cancelled": (p) => ({
+    subject: `Quote ${str(p.number)} withdrawn`,
+    body: {
+      heading: "We have withdrawn your quote",
+      paragraphs: [`We withdrew quote ${str(p.number)}: ${str(p.reason)}.`, "Reply to this email and we will help with anything you still need."],
+    },
+  }),
+  "quote.answered": (p, ctx) => ({
+    subject: `Quote ${str(p.number)} ${str(p.outcome)} by ${str(p.customer)}`,
+    body: {
+      heading: `Quote ${str(p.outcome)}`,
+      paragraphs: [`${str(p.customer)} ${str(p.outcome)} quote ${str(p.number)} for ${str(p.total)}.`, ...(str(p.reason) ? [`Their reason: ${str(p.reason)}`] : [])],
+      button: { label: "Open the quote", url: `${ctx.appUrl}/admin/quotes/${encodeURIComponent(str(p.quoteId))}` },
+    },
+  }),
+  "quote.tender-reminder": (p, ctx) => ({
+    subject: `Tender ${str(p.tender)} closes ${str(p.closes)}`,
+    body: {
+      heading: "A tender closes soon",
+      paragraphs: [`Tender ${str(p.tender)} (quote ${str(p.number)}) closes ${str(p.closes)} Gaborone time, which is ${str(p.closesThere)}.`, "Its quote hasn't gone to the customer yet. Check it and send it with the documents the tender asks for."],
+      ...(str(p.documents) ? { box: { title: "Documents it asks for", text: str(p.documents) } } : {}),
+      button: { label: "Open the quote", url: `${ctx.appUrl}/admin/quotes/${encodeURIComponent(str(p.quoteId))}` },
+    },
+  }),
+  "supplier.rfq": (p, ctx) => ({
+    subject: `${str(p.urgent) ? "Urgent: r" : "R"}equest for price ${str(p.reference)}`,
+    replyTo: str(p.replyTo) || undefined,
+    body: {
+      heading: `Request for price ${str(p.reference)}`,
+      paragraphs: [
+        `Hello ${str(p.supplier)}. Please send your best price for the items below by ${str(p.deadline)}, Gaborone time.`,
+        `Give the price per unit in ${str(p.currency)}, the quantity you have, the lead time to us and how long the price holds. Answer line by line with the button, or reply to this email keeping ${str(p.reference)} in the subject.`,
+      ],
+      list: str(p.lines).split("\n").filter(Boolean),
+      button: { label: "Give your prices", url: `${ctx.appUrl}/supplier/rfq/${encodeURIComponent(str(p.token))}` },
+      footnote: "If you can't supply an item, say so on the page and we won't chase you for it.",
     },
   }),
 };

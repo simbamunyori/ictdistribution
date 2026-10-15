@@ -32,6 +32,10 @@ export const STAFF_PERMISSIONS = {
   recordPayments: "Record payments received for orders",
   fulfilOrders: "Mark orders as sent or ready to collect",
   cancelOrders: "Cancel orders",
+  viewQuotes: "See requests for quote and the quotes sent",
+  manageQuotes: "Check, change, send and cancel quotes",
+  enterSupplierPrices: "Ask suppliers for prices and enter the prices they give",
+  manageQuoteRules: "Change the rules for sending quotes automatically",
   manageStaff: "Invite staff, change their role and deactivate them",
   viewAudit: "Read the full audit log",
 } as const;
@@ -57,6 +61,10 @@ const ALLOWED: Record<StaffPermission, StaffRole[]> = {
   recordPayments: ["ADMIN", "FINANCE"],
   fulfilOrders: ["ADMIN", "SALES", "LOGISTICS"],
   cancelOrders: ["ADMIN", "SALES", "FINANCE"],
+  viewQuotes: ["ADMIN", "SALES", "PROCUREMENT", "FINANCE", "SUPPORT"],
+  manageQuotes: ["ADMIN", "SALES"],
+  enterSupplierPrices: ["ADMIN", "SALES", "PROCUREMENT"],
+  manageQuoteRules: ["ADMIN"],
   manageStaff: ["ADMIN"],
   viewAudit: ["ADMIN", "FINANCE"],
 };

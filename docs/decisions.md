@@ -109,3 +109,32 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
   organisation, so backups and restores include them and no file storage
   needs setting up. Only staff can open them, and each opening is
   audited.
+
+## D5
+
+- **Quotes show prices before tax.** Businesses compare quotes before
+  tax, so lines are priced before tax and the tax is added on the total.
+  The shop still shows prices with tax. An agreed price, which includes
+  tax, is converted back before it is used on a quote.
+- **One quote, many suppliers.** Each line goes to the best supplier by
+  the sourcing rule once answers are in, so one quote can mix suppliers.
+  A supplier's answer counts only until the date it says it holds.
+- **Claude reads, rules decide.** Claude turns requests and supplier
+  emails into structured lines and prices (`claude-opus-5-5` with
+  server-side fallbacks). It never decides a price or whether a quote
+  goes out: that is the pricing code and the Admin's rules. Without a key,
+  or if Claude can't be reached, simple rules read what they can and flag
+  the rest.
+- **Only a supplier's own addresses set prices by email.** A reply from
+  any other address is kept on the request for staff to check, so a
+  forwarded or spoofed email can't change a quote.
+- **Strangers never get an automatic quote.** A request from an address
+  without an account always waits for a check, and each address can send
+  10 requests a day, so the mailbox can't be used to send our prices to
+  anyone who asks.
+- **WhatsApp requests to suppliers are sent by hand for now.** Staff get
+  the message and link ready to send; the messaging hub sends them in a
+  later milestone.
+- **Quote numbers** run from Q-100001 on their own sequence, separate
+  from order numbers.
+

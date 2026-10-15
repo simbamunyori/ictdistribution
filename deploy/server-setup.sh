@@ -78,6 +78,15 @@ MICROSOFT_STAFF_TENANT_ID=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 
+# Optional: automated quotations (docs/quotes.md). Claude reads requests
+# and supplier replies when ANTHROPIC_API_KEY is set; rules read them
+# otherwise. IMAP_URL lets customers email requests to QUOTES_EMAIL and
+# suppliers reply to it, e.g.
+# imaps://quotes%40$DOMAIN:password@mail.$DOMAIN:993
+ANTHROPIC_API_KEY=
+QUOTES_EMAIL=quotes@$DOMAIN
+IMAP_URL=
+
 # Exchange rates, fetched every six hours (docs/exchange-rates.md).
 RATE_SOURCE=open-er-api
 
