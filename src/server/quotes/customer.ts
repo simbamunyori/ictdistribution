@@ -62,11 +62,10 @@ export async function quoteForCustomer(db: Pick<PrismaClient, "quote">, number: 
 }
 
 export async function customerQuotes(db: Pick<PrismaClient, "quote">, v: QuoteViewer) {
-  const or: Prisma.QuoteWhereInput[] = [];
-  if (v.userId) or.push({ userId: v.userId, organisationId: null });
-  if (v.organisationId) or.push({ organisationId: v.organisationId });
-  if (!or.length) return [];
-  return db.quote.findMany({ where: { OR: or }, orderBy: { createdAt: "desc" }, take: 100, omit: CUSTOMER_QUOTE_OMIT, include: { market: { select: { locale: true, timeZone: true } } } });
+  // Buying for an organisation: the team's quotes; else the person's own.
+  const where: Prisma.QuoteWhereInput | null = v.organisationId ? { organisationId: v.organisationId } : v.userId ? { userId: v.userId, organisationId: null } : null;
+  if (!where) return [];
+  return db.quote.findMany({ where, orderBy: { createdAt: "desc" }, take: 100, omit: CUSTOMER_QUOTE_OMIT, include: { market: { select: { locale: true, timeZone: true } } } });
 }
 
 /** How the person answering can be trusted: the link from the email, or a member who may buy. */

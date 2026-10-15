@@ -39,7 +39,7 @@ export default async function CreditPage() {
   return (
     <>
       <PageHeader title="Credit" lead="Buy on account and pay on terms. Finance sets the limit and the days to pay." />
-      <div className="grid gap-6">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
         {org.verification !== "APPROVED" ? (
           <Card>
             <p>

@@ -192,6 +192,44 @@ export async function sheet(title: string, number: string) {
       }
     },
 
+    /**
+     * A table of short values, such as a statement's entries. Each column
+     * has a heading, a width in points and its alignment; the first
+     * column's text wraps. Bold rows (opening and closing balances) stand out.
+     */
+    table(columns: { label: string; width: number; align?: "right" }[], rows: { cells: string[]; bold?: boolean }[]) {
+      const xs: number[] = [];
+      columns.reduce((x, c) => (xs.push(x), x + c.width), M);
+      const at = (i: number, s: string, o: TextOptions) => (columns[i].align === "right" ? right(s, xs[i] + columns[i].width, y, o) : text(s, xs[i], y, o));
+      const head = () => {
+        columns.forEach((c, i) => at(i, c.label, { size: 9, f: bold, color: MUTED }));
+        y -= 6;
+        page.drawLine({ start: { x: M, y }, end: { x: A4.w - M, y }, thickness: 1, color: LINE });
+        y -= 14;
+      };
+      room(40);
+      head();
+      for (const r of rows) {
+        const wrapped = r.cells.map((c, i) => (columns[i].align === "right" ? [c] : wrap(c, r.bold ? bold : font, 9, columns[i].width - 8)));
+        const h = Math.max(...wrapped.map((w) => w.length)) * 12 + 6;
+        if (y - h < M + 30) {
+          newPage();
+          head();
+        }
+        wrapped.forEach((w, i) => {
+          const keep = y;
+          w.forEach((line, j) => {
+            y = keep - j * 12;
+            at(i, line, { size: 9, f: r.bold ? bold : font });
+          });
+          y = keep;
+        });
+        y -= h;
+        page.drawLine({ start: { x: M, y: y + 6 }, end: { x: A4.w - M, y: y + 6 }, thickness: 0.5, color: LINE });
+      }
+      y -= 8;
+    },
+
     /** Totals under the table; the last one is the total, in bold. */
     totals(rows: [label: string, value: string][]) {
       room(rows.length * 16 + 20);

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { saveCartAsListAction } from "@/app/(site)/account/portal-actions";
 import { updateCartLineAction } from "@/app/(site)/shop-actions";
+import { NameListForm } from "@/components/account/portal-forms";
 import { BusinessPrompt } from "@/components/shop/business-prompt";
 import { ProductImage } from "@/components/shop/product-card";
 import { SpecialLine } from "@/components/shop/price-tag";
@@ -12,16 +14,18 @@ import { cn } from "@/lib/cn";
 import { formatMoney } from "@/lib/money";
 import { deliveryFee } from "@/lib/shop-pricing";
 import { prisma } from "@/server/db";
+import { portalCan } from "@/server/portal/scope";
 import { cartLines, priceLines, subtotal, TRADE_MAX_LINE } from "@/server/shop/cart";
 import { currentCart } from "@/server/shop/cart-cookie";
 import { shopSettings } from "@/server/shop/settings";
-import { shopPrices, shopWhere } from "@/server/shop/viewer";
+import { shopper, shopPrices, shopWhere } from "@/server/shop/viewer";
 
 export const metadata: Metadata = { title: "Your cart", robots: { index: false } };
 
 export default async function CartPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const q = await searchParams;
-  const [prices, cart, settings] = await Promise.all([shopPrices(), currentCart(), shopSettings(prisma)]);
+  const [prices, cart, settings, s] = await Promise.all([shopPrices(), currentCart(), shopSettings(prisma), shopper()]);
+  const canSave = s.user ? portalCan({ role: s.organisation?.role ?? null }, "buy") : false;
   const lines = cart ? await priceLines(prisma, await cartLines(prisma, cart.id), prices) : [];
   const market = await prisma.market.findUniqueOrThrow({ where: { code: prices.market.code } });
   const points = await prisma.collectionPoint.count({ where: { marketCode: market.code, active: true } });
@@ -38,7 +42,7 @@ export default async function CartPage({ searchParams }: { searchParams: Promise
         <div className="mt-4 flex flex-col gap-3">
           {q.added ? (
             <div role="status">
-              <Alert tone="positive">Added to your cart.</Alert>
+              <Alert tone="positive">{/^\d+$/.test(q.added) && q.added !== "1" ? `Added ${q.added} items to your cart.` : "Added to your cart."}</Alert>
             </div>
           ) : null}
           {q.problem ? <Alert>{q.problem}</Alert> : null}
@@ -149,6 +153,15 @@ export default async function CartPage({ searchParams }: { searchParams: Promise
                 )}
               </div>
             </div>
+            {canSave ? (
+              <section aria-labelledby="save-cart" className="mt-6 rounded-lg border border-line bg-raised p-5">
+                <h2 id="save-cart" className="text-headline font-bold">
+                  Save as a list
+                </h2>
+                <p className="mt-1 mb-3 text-callout text-ink-muted">Keep this cart to buy again later, from Saved lists in your account{s.organisation ? `, shared with ${s.organisation.name}` : ""}.</p>
+                <NameListForm action={saveCartAsListAction} label="Save as a list" />
+              </section>
+            ) : null}
           </>
         ) : (
           <div className="mt-6 rounded-lg border border-line bg-raised p-6">

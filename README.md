@@ -92,6 +92,11 @@ The integration tests empty and reseed `TEST_DATABASE_URL` (it must end in
 | Warehouses and stock | `src/server/logistics/stock.ts` | /admin/stock |
 | Tracking per order line | `src/server/logistics/tracking.ts` | /admin/orders |
 | Deliveries, delivery notes, commercial invoices, proof of delivery | `src/server/logistics/deliveries.ts`, `src/server/logistics/documents.ts` | /admin/deliveries |
+| Tax invoices | `src/server/portal/invoices.ts` | /admin/orders, /account/invoices |
+| Statements, payments and ageing | `src/lib/statement.ts`, `src/server/portal/accounts.ts` | /account/statement, /account/payments |
+| Returns | `src/server/portal/returns.ts` | /admin/returns, /account/returns |
+| Saved lists and buying again | `src/server/portal/lists.ts` | /account/lists |
+| Who sees what in a customer's account | `src/server/portal/scope.ts` | /account |
 | Background jobs | `src/server/jobs/boss.ts` | |
 
 Business rules (markups, buffers, rounding, rate rules, sourcing rules, who is staff) live
@@ -109,5 +114,7 @@ shop, specials and orders: [docs/shop.md](docs/shop.md). Business
 customers, trade prices and credit: [docs/business.md](docs/business.md). Quotes:
 [docs/quotes.md](docs/quotes.md). Orders, purchase orders and suppliers'
 pages: [docs/procurement.md](docs/procurement.md). Shipments, landed
-cost, stock and deliveries: [docs/logistics.md](docs/logistics.md). Choices
+cost, stock and deliveries: [docs/logistics.md](docs/logistics.md). The
+customer portal, invoices, statements, returns and saved lists:
+[docs/portal.md](docs/portal.md). Choices
 made along the way: [docs/decisions.md](docs/decisions.md).

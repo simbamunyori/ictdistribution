@@ -17,6 +17,7 @@ import { requireStaff } from "@/server/auth/next";
 import { prisma } from "@/server/db";
 import { DELIVERY_STATUS_LABEL, linesToDeliver } from "@/server/logistics/deliveries";
 import { orderLogistics } from "@/server/logistics/tracking";
+import { RETURN_REASON_LABEL, RETURN_STAFF_LABEL, RETURN_STATUS_TONE } from "@/server/portal/returns";
 import { pricingSettings } from "@/server/pricing/rates";
 import { PO_STATUS_LABEL, PO_STATUS_TONE } from "@/server/procurement/common";
 import { ORDER_STATUS_LABEL, TO_SEND } from "@/server/shop/orders";
@@ -40,6 +41,8 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       organisation: { select: { id: true, name: true } },
       quote: { select: { id: true, number: true } },
       purchaseOrders: { orderBy: { createdAt: "asc" }, include: { supplier: { select: { name: true } } } },
+      invoice: { select: { number: true } },
+      returns: { orderBy: { createdAt: "desc" }, select: { id: true, number: true, status: true, reason: true, createdAt: true } },
     },
   });
   if (!order) notFound();
@@ -114,7 +117,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           </Card>
         ) : null}
 
-        <OrderView order={order} staff proFormaHref={`/admin/orders/${order.id}/pro-forma`} logistics={logistics} links={{ note: (n) => `/admin/deliveries/${encodeURIComponent(n)}/note`, pod: (n) => `/admin/deliveries/${encodeURIComponent(n)}/pod`, commercialInvoice: order.fulfilment === "DELIVERY" ? `/admin/orders/${order.id}/commercial-invoice` : undefined }} />
+        <OrderView order={order} staff proFormaHref={`/admin/orders/${order.id}/pro-forma`} invoice={order.invoice ? { number: order.invoice.number, href: `/admin/orders/${order.id}/invoice` } : undefined} logistics={logistics} links={{ note: (n) => `/admin/deliveries/${encodeURIComponent(n)}/note`, pod: (n) => `/admin/deliveries/${encodeURIComponent(n)}/pod`, commercialInvoice: order.fulfilment === "DELIVERY" ? `/admin/orders/${order.id}/commercial-invoice` : undefined }} />
 
         {canDeliver && order.status !== "CANCELLED" && order.status !== "AWAITING_PAYMENT" ? (
           <Card>
@@ -213,6 +216,25 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
                 No supplier for {unbought.map((l) => l.description).join(", ")}. Buy {unbought.length === 1 ? "it" : "them"} by hand, or add a supplier offer and make a purchase order.
               </Alert>
             ) : null}
+          </Card>
+        ) : null}
+
+        {order.returns.length ? (
+          <Card>
+            <h2 className="text-headline font-bold">Returns</h2>
+            <ul className="mt-3 divide-y divide-line">
+              {order.returns.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
+                  <span>
+                    <Link href={`/admin/returns/${r.id}`} className="font-semibold text-link underline underline-offset-4">
+                      {r.number}
+                    </Link>
+                    <span className="text-callout text-ink-muted">, {RETURN_REASON_LABEL[r.reason].toLowerCase()}, {formatDate(r.createdAt, locale, timeZone)}</span>
+                  </span>
+                  <Badge tone={RETURN_STATUS_TONE[r.status]}>{RETURN_STAFF_LABEL[r.status]}</Badge>
+                </li>
+              ))}
+            </ul>
           </Card>
         ) : null}
 

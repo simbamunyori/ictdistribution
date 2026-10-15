@@ -115,9 +115,9 @@ export async function consignmentAction(_: ActionState, form: FormData): Promise
 
 export async function shopSettingsAction(_: ActionState, form: FormData): Promise<ActionState> {
   const { actor, ip } = await staff();
-  const values = pick(form, ["heroTitle", "heroText", "payDays", "maxLineQuantity"]);
+  const values = pick(form, ["heroTitle", "heroText", "payDays", "maxLineQuantity", "returnDays"]);
   const result = await run(async () => {
-    await updateShopSettings(prisma, actor, { heroTitle: values.heroTitle, heroText: values.heroText, payDays: values.payDays, maxLineQuantity: values.maxLineQuantity }, ip);
+    await updateShopSettings(prisma, actor, { heroTitle: values.heroTitle, heroText: values.heroText, payDays: values.payDays, maxLineQuantity: values.maxLineQuantity, returnDays: values.returnDays }, ip);
     return "Saved.";
   }, values);
   revalidatePath("/", "layout");
@@ -154,9 +154,9 @@ export async function moveFeaturedUpAction(_: ActionState, form: FormData): Prom
 export async function marketTaxAction(_: ActionState, form: FormData): Promise<ActionState> {
   const { actor, ip } = await staff();
   const code = field(form, "code");
-  const values = pick(form, ["taxName", "taxPercent", "bankDetails"]);
+  const values = pick(form, ["taxName", "taxPercent", "taxNumber", "bankDetails"]);
   const result = await run(async () => {
-    await updateMarketTaxAndBank(prisma, actor, code, { taxName: values.taxName, taxPercent: values.taxPercent, bankDetails: values.bankDetails }, ip);
+    await updateMarketTaxAndBank(prisma, actor, code, { taxName: values.taxName, taxPercent: values.taxPercent, bankDetails: values.bankDetails, taxNumber: values.taxNumber }, ip);
     return "Saved. Shop prices use the new rate now.";
   }, values);
   revalidatePath("/", "layout");

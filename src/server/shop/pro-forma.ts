@@ -36,7 +36,7 @@ export async function proFormaPdf(o: Order & { lines: OrderLine[]; market: Pick<
   if (o.status === "CANCELLED") s.block("Cancelled", `This order was cancelled${o.cancelReason ? `: ${o.cancelReason}` : ""}. Do not pay it.`);
   else if (o.paidAt) s.block("Paid", `Paid in full on ${date(o.paidAt)}. Thank you.`);
   else if (o.bankDetails && o.paymentMethod !== "CARD") s.block("Pay into", `${o.bankDetails}\nReference: ${o.number}`);
-  s.block("Note", "This is a pro forma invoice, not a tax invoice. We send the tax invoice when the order is delivered.");
+  s.block("Note", "This is a pro forma invoice, not a tax invoice. We send the tax invoice when the order is sent or ready to collect.");
   s.button("See the order online", `${ctx.appUrl}/orders/${encodeURIComponent(o.number)}${ctx.token ? `?t=${encodeURIComponent(ctx.token)}` : ""}`);
   return s.finish();
 }

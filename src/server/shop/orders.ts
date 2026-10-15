@@ -10,6 +10,7 @@ import { DomainError } from "@/server/errors";
 import { can } from "@/server/org/access";
 import { cancelUnsentFor } from "@/server/procurement/purchase-orders";
 import { advanceLines } from "@/server/logistics/tracking";
+import { issueInvoice } from "@/server/portal/invoices";
 import { issueForDelivery, releaseForOrder } from "@/server/logistics/stock";
 import { assertStaffCan, type StaffActor } from "@/server/staff/access";
 import { cartLines, priceLines, subtotal, type PricedLine } from "./cart";
@@ -389,12 +390,21 @@ export async function orderForCustomer(db: Pick<PrismaClient, "order">, number: 
   return mine ? o : null;
 }
 
-export async function customerOrders(db: Pick<PrismaClient, "order">, buyer: Buyer) {
-  const or: Prisma.OrderWhereInput[] = [];
-  if (buyer.userId) or.push({ userId: buyer.userId, organisationId: null });
-  if (buyer.organisationId) or.push({ organisationId: buyer.organisationId });
-  if (!or.length) return [];
-  return db.order.findMany({ where: { OR: or }, orderBy: { createdAt: "desc" }, take: 100, include: { market: { select: { locale: true, timeZone: true } } } });
+/**
+ * A signed-in customer's orders: their organisation's, by anyone on the
+ * team, when buying for one; else their own. `filter` narrows them to a
+ * state, or to the orders the person placed themselves.
+ */
+export async function customerOrders(db: Pick<PrismaClient, "order">, buyer: Buyer, filter: { state?: "open" | "pay" | "sent" | "cancelled"; mine?: boolean } = {}) {
+  if (!buyer.userId && !buyer.organisationId) return [];
+  const scope: Prisma.OrderWhereInput = buyer.organisationId ? { organisationId: buyer.organisationId } : { userId: buyer.userId, organisationId: null };
+  const states: Record<string, Prisma.OrderWhereInput> = { open: { status: { in: TO_SEND } }, pay: { status: "AWAITING_PAYMENT" }, sent: { status: "FULFILLED" }, cancelled: { status: "CANCELLED" } };
+  return db.order.findMany({
+    where: { ...scope, ...(filter.state ? states[filter.state] : {}), ...(filter.mine && buyer.userId ? { userId: buyer.userId } : {}) },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    include: { market: { select: { locale: true, timeZone: true } }, invoice: { select: { number: true } } },
+  });
 }
 
 export async function listOrders(db: Pick<PrismaClient, "order">, f: { status?: OrderStatus; q?: string } = {}) {
@@ -480,6 +490,7 @@ export async function fulfilOrder(db: PrismaClient, actor: StaffActor, deps: Ord
     const lines = await tx.orderLine.findMany({ where: { orderId }, select: { id: true, quantity: true } });
     await issueForDelivery(tx, lines.map((l) => ({ orderLineId: l.id, quantity: l.quantity, remaining: l.quantity })), actor.name);
     if (o.fulfilment === "DELIVERY") await advanceLines(tx, lines.map((l) => l.id), "OUT_FOR_DELIVERY", actor.name, text, now);
+    await issueInvoice(tx, deps.key, orderId, now);
     await queueEmail(tx, deps.key, { to: o.email, kind: o.fulfilment === "COLLECTION" ? "order.ready" : "order.sent", payload: { ...orderEmailPayload(o, o.market), note: text } });
     await audit(tx, staffAudit(actor, { action: "order.fulfilled", summary: `Marked order ${o.number} as ${o.fulfilment === "COLLECTION" ? "ready to collect" : "sent"}${text ? `: ${text}` : ""}`, organisationId: o.organisationId, subjectUserId: o.userId, targetType: "Order", targetId: orderId, ipAddress: ip }));
   });

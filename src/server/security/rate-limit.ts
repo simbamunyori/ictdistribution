@@ -24,6 +24,8 @@ export const LIMITS = {
   invitePerOrg: { max: 30, windowMs: 60 * 60_000 },
   /** Tries at checkout from one address, including ones with mistakes. */
   checkoutPerIp: { max: 30, windowMs: 10 * 60_000 },
+  /** Return requests from one customer. */
+  returnsPerUser: { max: 10, windowMs: 60 * 60_000 },
   /** Orders actually placed from one address. */
   ordersPerIp: { max: 10, windowMs: 60 * 60_000 },
   /** Company documents a business uploads. */

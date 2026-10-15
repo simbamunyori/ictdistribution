@@ -24,7 +24,7 @@ export interface DeliveryLinks {
  * `logistics`, each line shows where it is and the deliveries are listed;
  * staff also see who moved each step and why.
  */
-export function OrderView({ order: o, staff = false, proFormaHref, logistics, links }: { order: ViewableOrder; staff?: boolean; proFormaHref?: string; logistics?: OrderLogistics; links?: DeliveryLinks }) {
+export function OrderView({ order: o, staff = false, proFormaHref, invoice, logistics, links }: { order: ViewableOrder; staff?: boolean; proFormaHref?: string; invoice?: { number: string; href: string }; logistics?: OrderLogistics; links?: DeliveryLinks }) {
   const { locale, timeZone } = o.market;
   const money = (amountMinor: bigint) => formatMoney({ amountMinor, currency: o.currency }, locale);
   const paid = o.payments.reduce((s, p) => s + p.amountMinor, 0n);
@@ -45,11 +45,18 @@ export function OrderView({ order: o, staff = false, proFormaHref, logistics, li
           <dd className="mt-1 font-bold tabular-nums">{money(o.totalMinor)}</dd>
         </div>
       </dl>
-      {proFormaHref ? (
-        <p className="-mt-2 text-callout">
-          <a href={proFormaHref} className="text-link underline underline-offset-4">
-            Download the pro forma invoice (PDF)
-          </a>
+      {proFormaHref || invoice ? (
+        <p className="-mt-2 flex flex-wrap gap-x-6 gap-y-1 text-callout">
+          {invoice ? (
+            <a href={invoice.href} className="font-semibold text-link underline underline-offset-4">
+              Download tax invoice {invoice.number} (PDF)
+            </a>
+          ) : null}
+          {proFormaHref ? (
+            <a href={proFormaHref} className="text-link underline underline-offset-4">
+              Download the pro forma invoice (PDF)
+            </a>
+          ) : null}
         </p>
       ) : null}
 
