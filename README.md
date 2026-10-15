@@ -103,6 +103,9 @@ The integration tests empty and reseed `TEST_DATABASE_URL` (it must end in
 | Finance settings and account codes | `src/server/finance/settings.ts` | /admin/finance/settings |
 | Reports: sales, margin, quotes, suppliers, stock, open orders | `src/lib/reports.ts`, `src/server/finance/reports.ts` | /admin/reports |
 | Export to Xero, QuickBooks and Sage | `src/lib/accounting-export.ts`, `src/server/finance/export.ts` | /admin/finance/export |
+| Search with other words and close matches | `src/lib/assistant.ts`, `src/server/catalogue/search.ts` | /products, /categories |
+| The site assistant and handover to Sales | `src/server/assistant/` | /assistant, /admin/assistant |
+| Product pages for search engines | `src/lib/seo.ts`, `src/app/sitemap.ts`, `src/app/robots.ts` | /products/[slug] |
 | Background jobs | `src/server/jobs/boss.ts` | |
 
 Business rules (markups, buffers, rounding, rate rules, sourcing rules, who is staff) live
@@ -124,5 +127,7 @@ cost, stock and deliveries: [docs/logistics.md](docs/logistics.md). The
 customer portal, invoices, statements, returns and saved lists:
 [docs/portal.md](docs/portal.md). Serials, warranty, repairs and credit
 notes: [docs/aftersales.md](docs/aftersales.md). Overdue reminders,
-reports and the accounting export: [docs/finance.md](docs/finance.md). Choices
+reports and the accounting export: [docs/finance.md](docs/finance.md).
+Search, the site assistant and search engines:
+[docs/assistant.md](docs/assistant.md). Choices
 made along the way: [docs/decisions.md](docs/decisions.md).

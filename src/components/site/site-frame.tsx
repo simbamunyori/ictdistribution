@@ -67,6 +67,11 @@ export async function SiteFrame({ children, back = "/" }: { children: React.Reac
                   Specials
                 </Link>
               </li>
+              <li>
+                <Link href="/assistant" className="block rounded-md px-2 py-1.5 font-semibold whitespace-nowrap text-link hover:bg-surface">
+                  Ask our assistant
+                </Link>
+              </li>
               {shop.map((c) => (
                 <li key={c.id}>
                   <Link href={`/categories/${c.slug}`} className="block rounded-md px-2 py-1.5 whitespace-nowrap text-ink-body hover:bg-surface hover:text-ink">

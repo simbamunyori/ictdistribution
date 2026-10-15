@@ -36,6 +36,10 @@ export const LIMITS = {
   quoteAnswersPerIp: { max: 30, windowMs: 10 * 60_000 },
   /** Confirmations, shipping details and files on supplier purchase order pages from one address. */
   poAnswersPerIp: { max: 40, windowMs: 10 * 60_000 },
+  /** Messages to the site assistant from one address. */
+  assistantPerIp: { max: 40, windowMs: 10 * 60_000 },
+  /** Conversations passed to Sales from one address. */
+  assistantHandoversPerIp: { max: 5, windowMs: 60 * 60_000 },
 } satisfies Record<string, Limit>;
 
 export class RateLimitedError extends Error {

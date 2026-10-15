@@ -10,6 +10,7 @@ import { prisma } from "@/server/db";
 import { waitingChecks } from "@/server/accounts/verification";
 import { deliveriesWaiting } from "@/server/logistics/deliveries";
 import { shipmentsOnTheWay } from "@/server/logistics/shipments";
+import { chatsWaiting } from "@/server/assistant/chats";
 import { returnsWaiting } from "@/server/portal/returns";
 import { purchaseOrdersWaiting } from "@/server/procurement/purchase-orders";
 import { quotesWaiting } from "@/server/quotes/staff";
@@ -30,7 +31,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const canQuotes = staffCan({ staffRole: role }, "viewQuotes");
   const canPurchaseOrders = staffCan({ staffRole: role }, "viewPurchaseOrders");
   const canLogistics = staffCan({ staffRole: role }, "viewLogistics");
-  const [held, lists, waiting, checks, applications, quotes, pos, onTheWay, deliveries, returns, theme] = await Promise.all([
+  const canAssistant = staffCan({ staffRole: role }, "handleAssistantChats");
+  const [held, lists, waiting, checks, applications, quotes, pos, onTheWay, deliveries, returns, theme, chats] = await Promise.all([
     prisma.exchangeRate.count({ where: { heldBack: { not: null } } }),
     canSuppliers ? waitingImports(prisma) : 0,
     canOrders ? ordersWaiting(prisma) : null,
@@ -42,12 +44,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     canLogistics ? deliveriesWaiting(prisma) : null,
     canOrders ? returnsWaiting(prisma) : 0,
     currentTheme(),
+    canAssistant ? chatsWaiting(prisma) : 0,
   ]);
   const items: AdminNavItem[] = [
     { href: "/admin", label: "Overview" },
     ...(canOrders ? [{ href: "/admin/orders", label: "Orders", badge: waiting ? waiting.payment + waiting.toSend || undefined : undefined }] : []),
     ...(canOrders ? [{ href: "/admin/returns", label: "Returns", badge: returns || undefined }] : []),
     ...(canOrders ? [{ href: "/admin/warranty", label: "Warranty" }] : []),
+    ...(canAssistant ? [{ href: "/admin/assistant", label: "Assistant", badge: chats || undefined }] : []),
     ...(canQuotes ? [{ href: "/admin/quotes", label: "Quotes", badge: quotes ? quotes.review + quotes.byHand || undefined : undefined }] : []),
     ...(canPurchaseOrders ? [{ href: "/admin/purchase-orders", label: "Purchase orders", badge: pos ? pos.approve + pos.byHand || undefined : undefined }] : []),
     ...(canLogistics
