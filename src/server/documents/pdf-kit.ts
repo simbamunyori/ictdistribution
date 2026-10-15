@@ -21,8 +21,11 @@ function hex(color: string) {
 }
 
 export const INK = hex(tokens.light.text);
-export const MUTED = hex(tokens.light.textMuted);
-export const BRAND = hex(tokens.light.primary);
+export const MUTED = hex(tokens.light["text-muted"]);
+export const BRAND = hex(tokens.light.brand);
+const ON_BRAND = hex(tokens.light["on-brand"]);
+/** Amber is never text on white (brand/DEVELOPMENT.md); links take the accent text colour. */
+const LINK = hex(tokens.light["accent-text"]);
 const LINE = hex(tokens.light.border);
 const SURFACE = hex(tokens.light.surface);
 
@@ -62,7 +65,7 @@ export function wrap(text: string, font: PDFFont, size: number, width: number): 
 }
 
 async function logo(doc: PDFDocument): Promise<PDFImage | null> {
-  for (const path of [join(process.cwd(), "public/brand/png/ictd-logo-640.png"), join(process.cwd(), "brand/png/ictd-logo-640.png")]) {
+  for (const path of [join(process.cwd(), "public/brand/png/ictdistribution-lockup-ink.png"), join(process.cwd(), "brand/png/ictdistribution-lockup-ink.png")]) {
     try {
       return await doc.embedPng(await readFile(path));
     } catch {
@@ -137,8 +140,8 @@ export async function sheet(title: string, number: string) {
         const w = 150;
         const h = (png.height / png.width) * w;
         page.drawImage(png, { x: M, y: y - h, width: w, height: h });
-      } else text(company.name, M, y - 16, { size: 16, f: bold, color: BRAND });
-      right(title, A4.w - M, y - 14, { size: 20, f: bold, color: BRAND });
+      } else text(company.name, M, y - 16, { size: 16, f: bold });
+      right(title, A4.w - M, y - 14, { size: 20, f: bold });
       right(number, A4.w - M, y - 32, { size: 11, f: bold });
       facts.forEach((f, i) => right(f, A4.w - M, y - 47 - i * 14));
       y -= Math.max(96, 61 + facts.length * 14);
@@ -261,7 +264,7 @@ export async function sheet(title: string, number: string) {
       room(44);
       const w = Math.max(150, bold.widthOfTextAtSize(safe(label), 11) + 40);
       page.drawRectangle({ x: M, y: y - 30, width: w, height: 30, color: BRAND });
-      text(label, M + (w - bold.widthOfTextAtSize(safe(label), 11)) / 2, y - 19, { f: bold, color: rgb(1, 1, 1), size: 11 });
+      text(label, M + (w - bold.widthOfTextAtSize(safe(label), 11)) / 2, y - 19, { f: bold, color: ON_BRAND, size: 11 });
       addLink(page, M, y - 30, w, 30, url);
       wrap(url, font, 8, A4.w - 2 * M - w - 16).forEach((u, i) => text(u, M + w + 16, y - 12 - i * 10, { size: 8, color: MUTED }));
       y -= 48;
@@ -269,7 +272,7 @@ export async function sheet(title: string, number: string) {
 
     /** Linked text at the current line. */
     linkText(label: string, x: number, url: string) {
-      text(label, x, y, { color: BRAND });
+      text(label, x, y, { color: LINK });
       addLink(page, x, y - 2, font.widthOfTextAtSize(safe(label), 10), 12, url);
     },
 

@@ -27,7 +27,7 @@ export interface EmailBody {
 
 export function renderEmail(body: EmailBody, appUrl: string, legalName: string): { text: string; html: string } {
   const t = tokens.light;
-  const font = tokens.font.family;
+  const font = `${tokens.font.text}, Arial, Helvetica, sans-serif`;
   const text = [
     body.heading,
     "",
@@ -48,22 +48,22 @@ export function renderEmail(body: EmailBody, appUrl: string, legalName: string):
     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;border-top:1px solid ${t.border}">${body.list.map((l) => `<tr><td style="padding:8px 0;border-bottom:1px solid ${t.border};font-size:15px;line-height:22px">${escapeHtml(l)}</td></tr>`).join("")}</table>`
     : "";
   const box = body.box
-    ? `<div style="margin:0 0 24px;padding:16px;border:1px solid ${t.border};border-radius:${tokens.radius.md};background:${t.surface}"><p style="margin:0 0 8px;font-weight:700">${escapeHtml(body.box.title)}</p><p style="margin:0;white-space:pre-line;font-size:15px;line-height:22px">${escapeHtml(body.box.text)}</p></div>`
+    ? `<div style="margin:0 0 24px;padding:16px;border:1px solid ${t.border};border-radius:${tokens.radius.md}px;background:${t.surface}"><p style="margin:0 0 8px;font-weight:700">${escapeHtml(body.box.title)}</p><p style="margin:0;white-space:pre-line;font-size:15px;line-height:22px">${escapeHtml(body.box.text)}</p></div>`
     : "";
   const button = body.button
-    ? `<p style="margin:0 0 24px"><a href="${escapeHtml(body.button.url)}" style="display:inline-block;background:${t.primary};color:${t.onPrimary};text-decoration:none;font-weight:600;padding:12px 20px;border-radius:${tokens.radius.md}">${escapeHtml(body.button.label)}</a></p>`
+    ? `<p style="margin:0 0 24px"><a href="${escapeHtml(body.button.url)}" style="display:inline-block;background:${t.brand};color:${t["on-brand"]};text-decoration:none;font-weight:600;padding:12px 20px;border-radius:${tokens.radius.md}px">${escapeHtml(body.button.label)}</a></p>`
     : "";
   const html = `<!doctype html><html><body style="margin:0;background:${t.surface};font-family:${font};color:${t.text}">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:${t.bg};border:1px solid ${t.border};border-radius:${tokens.radius.lg}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:${t.bg};border:1px solid ${t.border};border-radius:${tokens.radius.lg}px">
 <tr><td style="padding:32px">
-<img src="${escapeHtml(appUrl)}/brand/png/ictd-logo-640.png" width="180" alt="${escapeHtml(company.name)}" style="display:block;margin:0 0 32px;height:auto">
+<img src="${escapeHtml(appUrl)}/brand/png/ictdistribution-lockup-ink.png" width="200" alt="${escapeHtml(company.name)}" style="display:block;margin:0 0 32px;height:auto">
 <h1 style="margin:0 0 16px;font-size:22px;line-height:30px;color:${t.text}">${escapeHtml(body.heading)}</h1>
 ${body.paragraphs.map((p) => `<p style="margin:0 0 16px;font-size:16px;line-height:24px">${escapeHtml(p)}</p>`).join("")}
 ${code}${list}${box}${button}
-${body.footnote ? `<p style="margin:0;font-size:14px;line-height:20px;color:${t.textMuted}">${escapeHtml(body.footnote)}</p>` : ""}
+${body.footnote ? `<p style="margin:0;font-size:14px;line-height:20px;color:${t["text-muted"]}">${escapeHtml(body.footnote)}</p>` : ""}
 </td></tr></table>
-<p style="margin:16px 0 0;font-size:12px;color:${t.textMuted}">${escapeHtml(legalName)}</p>
+<p style="margin:16px 0 0;font-size:12px;color:${t["text-muted"]}">${escapeHtml(legalName)}</p>
 </td></tr></table></body></html>`;
   return { text, html };
 }

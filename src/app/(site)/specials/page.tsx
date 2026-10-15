@@ -16,7 +16,7 @@ export default async function SpecialsPage() {
   const where = await shopWhere();
   return (
     <SiteFrame back="/specials">
-      <div className="mx-auto max-w-6xl px-4 py-10 md:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-10 md:px-6">
         <h1 className="text-title font-bold">Specials</h1>
         <p className="mt-1 max-w-2xl text-ink-muted">Lower prices for a limited time, in {prices.market.name}. Each one ends on its date or when its stock runs out.</p>
         {specials.any ? (

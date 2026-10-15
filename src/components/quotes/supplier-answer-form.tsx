@@ -54,7 +54,7 @@ export function SupplierAnswerForm({ action, hidden, lines, currency, note, subm
           <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <TextField id={`notes-${l.id}`} name={`notes-${l.id}`} label="Notes (optional)" defaultValue={value(`notes-${l.id}`, l.notes)} hint="Such as an alternative part or the warranty." />
             <label className="flex min-h-11 items-center gap-2 font-semibold">
-              <input type="checkbox" name={`none-${l.id}`} defaultChecked={state.values ? v[`none-${l.id}`] === "on" : l.noOffer} className="size-4 accent-[var(--t-primary)]" />
+              <input type="checkbox" name={`none-${l.id}`} defaultChecked={state.values ? v[`none-${l.id}`] === "on" : l.noOffer} className="size-4 accent-[var(--t-accent)]" />
               Can&apos;t supply
             </label>
           </div>

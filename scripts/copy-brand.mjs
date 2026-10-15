@@ -7,4 +7,4 @@ rmSync("public/brand", { recursive: true, force: true });
 mkdirSync("public/brand", { recursive: true });
 cpSync("brand/logo", "public/brand/logo", { recursive: true });
 cpSync("brand/png", "public/brand/png", { recursive: true });
-cpSync("brand/icons/web", "public/brand/icons", { recursive: true });
+cpSync("brand/app-icon", "public/brand/app-icon", { recursive: true });

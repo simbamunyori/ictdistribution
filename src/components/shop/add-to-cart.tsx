@@ -5,10 +5,10 @@ import { inputClass } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 
 /** Adds a product (or a bundle) to the cart. A plain form, so it works without JavaScript. */
-export function AddToCart({ productId, bundleId, label = "Add to cart", withQuantity = false, max = 10, size = "md", idPrefix, name }: { productId?: string; bundleId?: string; label?: string; /** What is added, for screen readers when the label is short. */ name?: string; withQuantity?: boolean; max?: number; size?: "sm" | "md"; idPrefix?: string }) {
+export function AddToCart({ productId, bundleId, label = "Add to cart", withQuantity = false, max = 10, size = "md", idPrefix, name, wide = false }: { productId?: string; /** Fills the width of its box, as on product cards and the buy box. */ wide?: boolean; bundleId?: string; label?: string; /** What is added, for screen readers when the label is short. */ name?: string; withQuantity?: boolean; max?: number; size?: "sm" | "md"; idPrefix?: string }) {
   const qid = `${idPrefix ?? productId ?? bundleId}-qty`;
   return (
-    <form action={addToCartAction} className="flex items-end gap-2">
+    <form action={addToCartAction} className={cn("flex items-end gap-2", wide && "w-full")}>
       {productId ? <input type="hidden" name="productId" value={productId} /> : null}
       {bundleId ? <input type="hidden" name="bundleId" value={bundleId} /> : null}
       {withQuantity ? (
@@ -29,7 +29,7 @@ export function AddToCart({ productId, bundleId, label = "Add to cart", withQuan
           )}
         </div>
       ) : null}
-      <button type="submit" aria-label={name ? `${label} ${name} to your cart` : undefined} className={buttonClass("primary", size, "gap-2")}>
+      <button type="submit" aria-label={name ? `${label} ${name} to your cart` : undefined} className={buttonClass("primary", size, cn("gap-2", wide && "flex-1"))}>
         <ShoppingCart aria-hidden className="size-4" />
         {label}
       </button>

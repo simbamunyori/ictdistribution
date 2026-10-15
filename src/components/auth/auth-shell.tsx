@@ -7,7 +7,7 @@ export function AuthShell({ title, lead, children, footer }: { title: string; le
   return (
     <div className="flex min-h-dvh flex-col items-center bg-surface px-4 py-10">
       <Link href="/" aria-label={`${company.name} home`} className="rounded-md">
-        <Logo lockupOnly />
+        <Logo />
       </Link>
       <main className="mt-8 w-full max-w-md rounded-lg border border-line bg-raised p-6 md:p-8">
         <h1 className="text-title font-bold">{title}</h1>

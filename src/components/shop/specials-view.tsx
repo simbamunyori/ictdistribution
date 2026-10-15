@@ -87,7 +87,7 @@ export function BundleSpecials({ items, where }: { items: Specials["bundles"]; w
 export function ProductSpecials({ items, compare, back, where }: { items: Specials["products"]; compare: string[]; back: string; where: Where }) {
   if (!items.length) return null;
   return (
-    <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <ul className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
       {items.map((p) => (
         <li key={p.id} className="flex">
           <ProductCard product={p} comparing={compare.includes(p.id)} back={back} where={where} />

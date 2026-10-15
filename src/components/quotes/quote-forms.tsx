@@ -43,7 +43,7 @@ export function QuoteRequestForm({ types, marketName, canTender, initialText = "
           .filter((t) => canTender || t.value !== "TENDER")
           .map((t) => (
             <div key={t.value} className={cn("flex items-start gap-3 rounded-md border border-line bg-raised p-4", type === t.value && "border-brand")}>
-              <input id={`type-${t.value}`} type="radio" name="type" value={t.value} checked={type === t.value} onChange={() => setType(t.value)} aria-describedby={`type-${t.value}-hint`} className="size-6 shrink-0 accent-[var(--t-primary)]" />
+              <input id={`type-${t.value}`} type="radio" name="type" value={t.value} checked={type === t.value} onChange={() => setType(t.value)} aria-describedby={`type-${t.value}-hint`} className="size-6 shrink-0 accent-[var(--t-accent)]" />
               <div>
                 <label htmlFor={`type-${t.value}`} className="font-semibold text-ink">
                   {t.label}

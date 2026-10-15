@@ -309,3 +309,9 @@ in [ICTD_BUILD.md](ICTD_BUILD.md), "Decisions and inputs from the business".
 - **Structured data carries a price only for retail products**, and only
   the retail price. Trade prices depend on who is signed in, so they stay
   off pages search engines read.
+
+## Storefront redesign and brand pack v2
+
+- The October brand pack (Ink, Amber, Steel, Cobalt; Inter and JetBrains Mono) replaces the first one. `brand/` holds the pack exactly as supplied; `src/config/theme/tokens-plugin.mjs` maps its semantic colours to the names components already use, so no component holds a colour. Primary actions are Amber with Ink text, links and focus are Cobalt, and Amber is never text on white.
+- Fonts come from the `@fontsource-variable` packages and are served from our own files. Inter's optical sizes stand in for Inter Display at headline sizes.
+- The storefront follows the large marketplaces where it helps buyers: an Ink header with search first, an All categories menu, a home page with category tiles, specials, popular products and brands, denser product grids (two across on phones), and a product page with a sticky buy box. Products without a photo show their category's drawing until one is added.

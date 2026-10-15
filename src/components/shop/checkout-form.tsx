@@ -32,7 +32,7 @@ export function Choice({ name, value, checked, onChange, label, hint, disabled }
   const id = `${name}-${value}`;
   return (
     <div className={cn("flex items-start gap-3 rounded-md border border-line bg-raised p-4", checked && "border-brand", disabled && "opacity-60")}>
-      <input id={id} type="radio" name={name} value={value} {...(onChange ? { checked, onChange } : { defaultChecked: checked })} disabled={disabled} aria-describedby={hint ? `${id}-hint` : undefined} className="mt-1 size-4 shrink-0 accent-[var(--t-primary)]" />
+      <input id={id} type="radio" name={name} value={value} {...(onChange ? { checked, onChange } : { defaultChecked: checked })} disabled={disabled} aria-describedby={hint ? `${id}-hint` : undefined} className="mt-1 size-4 shrink-0 accent-[var(--t-accent)]" />
       <div>
         <label htmlFor={id} className="font-semibold text-ink">
           {label}

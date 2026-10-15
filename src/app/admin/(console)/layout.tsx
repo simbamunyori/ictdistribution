@@ -91,7 +91,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 lg:px-6">
           <Link href="/admin" aria-label={`${company.name} admin`} className="flex items-center gap-3 rounded-md">
             <Logo />
-            <span className="hidden rounded-sm bg-forest px-2 py-0.5 text-caption font-bold text-white sm:inline">Staff</span>
+            <span className="hidden rounded-sm bg-brand px-2 py-0.5 text-caption font-bold text-on-brand sm:inline">Staff</span>
           </Link>
           <div className="flex items-center gap-3">
             <p className="hidden text-right text-callout leading-tight md:block">

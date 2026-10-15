@@ -56,16 +56,13 @@ export default async function ProductPage({ params }: Props) {
   const site = env().APP_URL;
   const url = `${site}/products/${p.slug}`;
   // For search engines: the retail price only, as a visitor who isn't signed in sees it.
-  const structured = [
-    productJsonLd({ name: p.name, brand: p.brand.name, mpn: p.mpn, description: p.summary || p.description, url, images: p.images.map((m) => `${site}/media/${m.id}`), category: c.parent ? `${c.parent.name} > ${c.name}` : c.name, price: where.standing === "retail" && p.sellToIndividuals && p.price ? p.price.amount : null, leadTimeDays: p.price?.leadTimeDays ?? null, warrantyMonths: p.warrantyMonths }),
-    breadcrumbJsonLd([{ name: "Products", url: `${site}/products` }, ...(c.parent ? [{ name: c.parent.name, url: `${site}/categories/${c.parent.slug}` }] : []), { name: c.name, url: `${site}/categories/${c.slug}` }, { name: `${p.brand.name} ${p.name}`, url }]),
-  ];
+  const structured = [productJsonLd({ name: p.name, brand: p.brand.name, mpn: p.mpn, description: p.summary || p.description, url, images: p.images.map((m) => `${site}/media/${m.id}`), category: c.parent ? `${c.parent.name} > ${c.name}` : c.name, price: where.standing === "retail" && p.sellToIndividuals && p.price ? p.price.amount : null, leadTimeDays: p.price?.leadTimeDays ?? null, warrantyMonths: p.warrantyMonths }), breadcrumbJsonLd([{ name: "Products", url: `${site}/products` }, ...(c.parent ? [{ name: c.parent.name, url: `${site}/categories/${c.parent.slug}` }] : []), { name: c.name, url: `${site}/categories/${c.slug}` }, { name: `${p.brand.name} ${p.name}`, url }])];
   return (
     <SiteFrame back={back}>
       {structured.map((d, i) => (
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdText(d) }} />
       ))}
-      <div className="mx-auto max-w-6xl px-4 py-10 md:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-10 md:px-6">
         <nav aria-label="Breadcrumb" className="mb-4 text-callout">
           <ol className="flex flex-wrap gap-1 text-ink-muted">
             <li>
@@ -90,30 +87,54 @@ export default async function ProductPage({ params }: Props) {
           </ol>
         </nav>
 
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-8 md:grid-cols-2">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-8 md:grid-cols-2 lg:grid-cols-[minmax(0,5fr)_minmax(0,4fr)_minmax(0,3fr)]">
+          <div className="min-w-0 md:row-span-2 lg:row-span-1">
+            <div className="md:sticky md:top-40">
+              <ProductImage image={main ?? null} size="large" categorySlug={c.parent?.slug ?? c.slug} className="aspect-square w-full rounded-lg border border-line p-6" />
+              {more.length ? (
+                <ul className="mt-3 grid grid-cols-5 gap-2">
+                  {more.map((m) => (
+                    <li key={m.id}>
+                      <a href={`/media/${m.id}`} className="block rounded-md border border-line hover:border-ink-muted">
+                        <ProductImage image={m} className="aspect-square w-full rounded-md p-1" />
+                        <span className="sr-only">Open the larger image</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          </div>
+
           <div className="min-w-0">
-            <ProductImage image={main ?? null} size="large" className="aspect-[4/3] w-full rounded-lg border border-line" />
-            {more.length ? (
-              <ul className="mt-3 grid grid-cols-4 gap-2">
-                {more.map((m) => (
-                  <li key={m.id}>
-                    <a href={`/media/${m.id}`} className="block rounded-md border border-line">
-                      <ProductImage image={m} className="aspect-square w-full rounded-md" />
-                      <span className="sr-only">Open the larger image</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
+            <Link href={`/products?b=${encodeURIComponent(p.brand.slug)}`} className="kicker text-link hover:underline hover:underline-offset-4">
+              {p.brand.name}
+            </Link>
+            <h1 className="mt-2 text-title font-bold">{p.name}</h1>
+            <p className="mt-2 font-mono text-callout text-ink-muted">Part number {p.mpn}</p>
+            {p.summary ? <p className="mt-4 text-headline text-ink-body">{p.summary}</p> : null}
+            {p.specRows.length ? (
+              <div className="mt-6 border-t border-line pt-5">
+                <h2 className="text-body font-bold">Key specifications</h2>
+                <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-callout">
+                  {p.specRows.slice(0, 6).map((r) => (
+                    <div key={r.label} className="contents">
+                      <dt className="text-ink-muted">{r.label}</dt>
+                      <dd className="font-semibold text-ink">{r.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {p.specRows.length > 6 ? (
+                  <a href="#specs" className="mt-3 inline-block text-callout font-semibold text-link underline underline-offset-4">
+                    All {p.specRows.length} specifications
+                  </a>
+                ) : null}
+              </div>
             ) : null}
           </div>
 
           <div className="min-w-0">
-            <p className="kicker text-link">{p.brand.name}</p>
-            <h1 className="mt-2 text-title font-bold">{p.name}</h1>
-            <p className="mt-2 text-callout text-ink-muted">Part number {p.mpn}</p>
-            {p.summary ? <p className="mt-4 text-headline text-ink-body">{p.summary}</p> : null}
-
-            <div className="mt-6 rounded-lg border border-line bg-surface p-5">
+            <div className="rounded-lg border border-line bg-raised p-5 shadow-[0_1px_2px_rgb(0_0_0/0.06)] lg:sticky lg:top-40">
               {p.price ? (
                 <>
                   <PriceTag price={p.price} locale={where.locale} timeZone={where.timeZone} taxName={prices.market.taxName} size="lg" />
@@ -140,7 +161,7 @@ export default async function ProductPage({ params }: Props) {
                     </table>
                   ) : null}
                   <div className="mt-4">
-                    <AddToCart productId={p.id} withQuantity max={max} />
+                    <AddToCart productId={p.id} withQuantity max={max} wide />
                   </div>
                   {lists ? (
                     <details className="mt-4 rounded-md border border-line p-3">
@@ -173,39 +194,43 @@ export default async function ProductPage({ params }: Props) {
                   </Link>
                 </>
               )}
-              <div className="mt-4">
+              <div className="mt-4 flex flex-wrap items-center gap-3">
                 <CompareToggle id={p.id} comparing={compare.includes(p.id)} back={back} />
+                {p.price ? (
+                  <Link href="/account/quotes/new" className="text-callout font-semibold text-link underline underline-offset-4">
+                    Buying more? Ask for a quote
+                  </Link>
+                ) : null}
               </div>
+              <ul className="mt-5 flex flex-col gap-3 border-t border-line pt-5 text-callout">
+                {p.price && (lead || market.deliveryNote) ? (
+                  <li className="flex items-start gap-3">
+                    <Truck aria-hidden className="mt-0.5 size-5 shrink-0 text-link" />
+                    <span>{[lead, market.deliveryEnabled ? market.deliveryNote : `Collect in ${market.name}.`].filter(Boolean).join(" ")}</span>
+                  </li>
+                ) : null}
+                {p.warrantyMonths ? (
+                  <li className="flex items-start gap-3">
+                    <ShieldCheck aria-hidden className="mt-0.5 size-5 shrink-0 text-link" />
+                    <span>
+                      {p.warrantyMonths}-month warranty{p.warrantyTerms ? `, ${p.warrantyTerms.charAt(0).toLowerCase()}${p.warrantyTerms.slice(1)}` : ""}.
+                    </span>
+                  </li>
+                ) : null}
+                {p.sellToIndividuals && where.standing === "retail" ? (
+                  <li className="flex items-start gap-3">
+                    <Building2 aria-hidden className="mt-0.5 size-5 shrink-0 text-link" />
+                    <span>
+                      Buying for a business?{" "}
+                      <Link href="/sign-up?for=business" className="text-link underline underline-offset-4">
+                        Register for trade prices
+                      </Link>
+                      .
+                    </span>
+                  </li>
+                ) : null}
+              </ul>
             </div>
-
-            <ul className="mt-6 flex flex-col gap-3 text-callout">
-              {p.price && (lead || market.deliveryNote) ? (
-                <li className="flex items-start gap-3">
-                  <Truck aria-hidden className="mt-0.5 size-5 shrink-0 text-link" />
-                  <span>{[lead, market.deliveryEnabled ? market.deliveryNote : `Collect in ${market.name}.`].filter(Boolean).join(" ")}</span>
-                </li>
-              ) : null}
-              {p.warrantyMonths ? (
-                <li className="flex items-start gap-3">
-                  <ShieldCheck aria-hidden className="mt-0.5 size-5 shrink-0 text-link" />
-                  <span>
-                    {p.warrantyMonths}-month warranty{p.warrantyTerms ? `, ${p.warrantyTerms.charAt(0).toLowerCase()}${p.warrantyTerms.slice(1)}` : ""}.
-                  </span>
-                </li>
-              ) : null}
-              {p.sellToIndividuals && where.standing === "retail" ? (
-                <li className="flex items-start gap-3">
-                  <Building2 aria-hidden className="mt-0.5 size-5 shrink-0 text-link" />
-                  <span>
-                    Buying for a business?{" "}
-                    <Link href="/sign-up?for=business" className="text-link underline underline-offset-4">
-                      Register for trade prices
-                    </Link>
-                    .
-                  </span>
-                </li>
-              ) : null}
-            </ul>
           </div>
         </div>
 
@@ -268,7 +293,7 @@ export default async function ProductPage({ params }: Props) {
             <h2 id="goes-with" className="text-headline font-bold">
               Goes well with
             </h2>
-            <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <ul className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
               {p.goesWith.map((x) => (
                 <li key={x.id} className="flex">
                   <ProductCard product={x} comparing={compare.includes(x.id)} back={back} where={where} />
@@ -282,7 +307,7 @@ export default async function ProductPage({ params }: Props) {
             <h2 id="suggested" className="text-headline font-bold">
               You may also need
             </h2>
-            <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <ul className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
               {p.suggested.map((x) => (
                 <li key={x.id} className="flex">
                   <ProductCard product={x} comparing={compare.includes(x.id)} back={back} where={where} />

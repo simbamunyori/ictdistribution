@@ -22,7 +22,7 @@ export default async function Products({ searchParams }: { searchParams: Promise
   const close = result && !result.total && result.terms.length ? (await findProducts(prisma, { query: result.terms.join(" "), limit: 6 }, prices)).items : [];
   return (
     <SiteFrame back="/products">
-      <div className="mx-auto max-w-6xl px-4 py-10 md:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-10 md:px-6">
         <h1 className="mb-6 text-title font-bold">{result?.terms.length ? "Search" : "All products"}</h1>
         <BrowseView path="/products" search={search} result={result!} compare={compare} where={await shopWhere()} categoryLinks={categories.filter((c) => c.count).map((c) => ({ href: `/categories/${c.slug}`, label: c.name, count: c.count }))} close={close} />
       </div>

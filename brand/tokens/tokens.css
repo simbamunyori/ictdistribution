@@ -1,104 +1,80 @@
-/* ICT Distribution Africa design tokens.
-   Load Plus Jakarta Sans (400, 600, 700, 800) via next/font/google or the files in /fonts.
-   Light theme is the default. Dark applies when the OS asks for it (unless data-theme="light"),
-   or when <html data-theme="dark"> is set. */
-:root {
-  --ictd-forest: #0B2A24;
-  --ictd-green: #0F7B5F;
-  --ictd-mint: #3FD0A0;
-  --ictd-sunrise: #F2A33A;
-  --ictd-sand: #F7F5F0;
-
-  --color-bg: #FFFFFF;
-  --color-surface: #F7F5F0;
-  --color-surface-raised: #FFFFFF;
-  --color-border: #E4DFD4;
-  --color-text: #0B2A24;
-  --color-text-body: #2E3D38;
-  --color-text-muted: #5E6B66;
-  --color-primary: #0F7B5F;
-  --color-primary-hover: #0B6E54;
-  --color-primary-text: #0B6E54;
-  --color-on-primary: #FFFFFF;
-  --color-accent: #3FD0A0;
-  --color-highlight: #F2A33A;
-  --color-on-highlight: #0B2A24;
-  --color-highlight-text: #B4590F;
-  --color-success: #14724A;
-  --color-warning: #9A5300;
-  --color-danger: #C0333A;
-  --color-info: #1F5FA8;
-  --color-focus: #0F7B5F;
-
-  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  --font-weight-regular: 400;
-  --font-weight-semibold: 600;
-  --font-weight-bold: 700;
-  --font-weight-extrabold: 800;
-  --tracking-headline: -0.02em;
-  --tracking-label: 0.12em;
-
+/* ICT Distribution Africa design tokens. Light by default, dark via prefers-color-scheme or [data-theme="dark"]. */
+:root{
+  --ictd-ink: #0D1117;
+  --ictd-amber: #F2A30F;
+  --ictd-steel: #5C6673;
+  --ictd-cobalt: #2D5BE3;
+  --ictd-fog: #F2F4F6;
+  --ictd-paper: #FFFFFF;
+  --font-display: "Inter Display", "Inter", system-ui, sans-serif;
+  --font-text: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
-  --radius-pill: 999px;
-
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --space-7: 48px;
-  --space-8: 64px;
-
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / .06);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / .08);
+  --bg: #FFFFFF;
+  --surface: #F2F4F6;
+  --surface-raised: #FFFFFF;
+  --border: #DADFE5;
+  --text: #0D1117;
+  --text-muted: #5C6673;
+  --brand: #F2A30F;
+  --brand-hover: #D98F05;
+  --on-brand: #0D1117;
+  --brand-text: #7A5000;
+  --accent: #2D5BE3;
+  --on-accent: #FFFFFF;
+  --accent-text: #2D5BE3;
+  --focus: #2D5BE3;
+  --success: #0A7A45;
+  --warning: #7A5000;
+  --danger: #B42318;
+  --info: #2D5BE3;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-bg: #0B2A24;
-    --color-surface: #10372F;
-    --color-surface-raised: #133D34;
-    --color-border: #1E4A40;
-    --color-text: #FFFFFF;
-    --color-text-body: #C9D8D2;
-    --color-text-muted: #8FA59D;
-    --color-primary: #3FD0A0;
-    --color-primary-hover: #6BDDB6;
-    --color-primary-text: #3FD0A0;
-    --color-on-primary: #0B2A24;
-    --color-accent: #3FD0A0;
-    --color-highlight: #F2A33A;
-    --color-on-highlight: #0B2A24;
-    --color-highlight-text: #F2A33A;
-    --color-success: #5BDB9F;
-    --color-warning: #F5B54A;
-    --color-danger: #FF8A84;
-    --color-info: #7DB9FF;
-    --color-focus: #3FD0A0;
+@media (prefers-color-scheme: dark){
+:root:not([data-theme="light"]){
+    --bg: #0D1117;
+    --surface: #161B22;
+    --surface-raised: #1F2630;
+    --border: #2D3540;
+    --text: #E6EDF3;
+    --text-muted: #9AA4B0;
+    --brand: #F2A30F;
+    --brand-hover: #FFB733;
+    --on-brand: #0D1117;
+    --brand-text: #F2A30F;
+    --accent: #6E8FF0;
+    --on-accent: #0D1117;
+    --accent-text: #6E8FF0;
+    --focus: #6E8FF0;
+    --success: #4ADE8A;
+    --warning: #F5B544;
+    --danger: #FF7A70;
+    --info: #6E8FF0;
     color-scheme: dark;
-  }
 }
-:root[data-theme="dark"] {
-  --color-bg: #0B2A24;
-  --color-surface: #10372F;
-  --color-surface-raised: #133D34;
-  --color-border: #1E4A40;
-  --color-text: #FFFFFF;
-  --color-text-body: #C9D8D2;
-  --color-text-muted: #8FA59D;
-  --color-primary: #3FD0A0;
-  --color-primary-hover: #6BDDB6;
-  --color-primary-text: #3FD0A0;
-  --color-on-primary: #0B2A24;
-  --color-accent: #3FD0A0;
-  --color-highlight: #F2A33A;
-  --color-on-highlight: #0B2A24;
-  --color-highlight-text: #F2A33A;
-  --color-success: #5BDB9F;
-  --color-warning: #F5B54A;
-  --color-danger: #FF8A84;
-  --color-info: #7DB9FF;
-  --color-focus: #3FD0A0;
+}
+:root[data-theme="dark"]{
+  --bg: #0D1117;
+  --surface: #161B22;
+  --surface-raised: #1F2630;
+  --border: #2D3540;
+  --text: #E6EDF3;
+  --text-muted: #9AA4B0;
+  --brand: #F2A30F;
+  --brand-hover: #FFB733;
+  --on-brand: #0D1117;
+  --brand-text: #F2A30F;
+  --accent: #6E8FF0;
+  --on-accent: #0D1117;
+  --accent-text: #6E8FF0;
+  --focus: #6E8FF0;
+  --success: #4ADE8A;
+  --warning: #F5B544;
+  --danger: #FF7A70;
+  --info: #6E8FF0;
   color-scheme: dark;
 }
